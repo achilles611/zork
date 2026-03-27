@@ -151,11 +151,14 @@ mouse_filter = 1
 script = ExtResource("2_mobile")
 
 [node name="JoystickArea" type="Control" parent="CanvasLayer/MobileControls" unique_id=133043979]
-layout_mode = 0
+layout_mode = 1
+anchors_preset = 1
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 24.0
-offset_top = 652.0
+offset_top = -328.0
 offset_right = 328.0
-offset_bottom = 1056.0
+offset_bottom = -24.0
 mouse_filter = 1
 
 [node name="JoystickBase" type="Panel" parent="CanvasLayer/MobileControls/JoystickArea" unique_id=1041389333]
@@ -175,11 +178,16 @@ offset_bottom = 172.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_joystick_knob")
 
 [node name="Buttons" type="Control" parent="CanvasLayer/MobileControls" unique_id=336803231]
-layout_mode = 0
-offset_left = 1548.0
-offset_top = 616.0
-offset_right = 1942.0
-offset_bottom = 1054.0
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -394.0
+offset_top = -438.0
+offset_right = 0.0
+offset_bottom = 0.0
 mouse_filter = 1
 
 [node name="BurnButton" type="Button" parent="CanvasLayer/MobileControls/Buttons" unique_id=1523492465]

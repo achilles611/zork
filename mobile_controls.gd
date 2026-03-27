@@ -8,6 +8,7 @@ const MOUSE_TOUCH_ID := -999
 var move_vector: Vector2 = Vector2.ZERO
 var burn_active := false
 var joystick_touch_id := -1
+var burn_touch_id := -1
 
 @onready var joystick_area = $JoystickArea
 @onready var joystick_base = $JoystickArea/JoystickBase
@@ -16,7 +17,6 @@ var joystick_touch_id := -1
 @onready var fire_button = $Buttons/FireButton
 
 func _ready() -> void:
-	joystick_area.gui_input.connect(_on_joystick_gui_input)
 	burn_button.button_down.connect(_on_burn_button_down)
 	burn_button.button_up.connect(_on_burn_button_up)
 	burn_button.mouse_exited.connect(_on_burn_button_mouse_exited)
@@ -42,23 +42,46 @@ func _on_burn_button_mouse_exited() -> void:
 func _on_fire_button_pressed() -> void:
 	fire_requested.emit()
 
-func _on_joystick_gui_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
-		if event.pressed and joystick_touch_id == -1 and joystick_area.get_global_rect().has_point(event.position):
-			joystick_touch_id = event.index
+		if event.pressed:
+			if joystick_touch_id == -1 and is_inside_joystick(event.position):
+				joystick_touch_id = event.index
+				update_joystick(event.position)
+				get_viewport().set_input_as_handled()
+			elif burn_touch_id == -1 and burn_button.get_global_rect().has_point(event.position):
+				burn_touch_id = event.index
+				burn_active = true
+				get_viewport().set_input_as_handled()
+			elif fire_button.get_global_rect().has_point(event.position):
+				fire_requested.emit()
+				get_viewport().set_input_as_handled()
+		else:
+			if event.index == joystick_touch_id:
+				reset_joystick()
+				get_viewport().set_input_as_handled()
+			if event.index == burn_touch_id:
+				burn_touch_id = -1
+				burn_active = false
+				get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag:
+		if event.index == joystick_touch_id:
 			update_joystick(event.position)
-		elif !event.pressed and event.index == joystick_touch_id:
-			reset_joystick()
-	elif event is InputEventScreenDrag and event.index == joystick_touch_id:
-		update_joystick(event.position)
+			get_viewport().set_input_as_handled()
+		elif event.index == burn_touch_id:
+			burn_active = burn_button.get_global_rect().has_point(event.position)
+			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed and joystick_area.get_global_rect().has_point(event.position):
+		if event.pressed and is_inside_joystick(event.position):
 			joystick_touch_id = MOUSE_TOUCH_ID
 			update_joystick(event.position)
 		elif !event.pressed and joystick_touch_id == MOUSE_TOUCH_ID:
 			reset_joystick()
 	elif event is InputEventMouseMotion and joystick_touch_id == MOUSE_TOUCH_ID and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		update_joystick(event.position)
+
+func is_inside_joystick(global_position: Vector2) -> bool:
+	return joystick_area.get_global_rect().has_point(global_position) or joystick_base.get_global_rect().has_point(global_position)
 
 func update_joystick(global_position: Vector2) -> void:
 	var center := get_joystick_center()
