@@ -41,10 +41,11 @@ var arena_center: Vector2
 var arena_radius := 0.0
 var base_camera_zoom: Vector2
 var player_one: Node2D = null
-var space_was_pressed := false
+var shift_was_pressed := false
 var console_open := false
 var round_over := false
 var npc_attack_delay_remaining := NPC_ATTACK_DELAY
+var mobile_dash_requested := false
 
 func get_camera_world_size() -> Vector2:
 	var viewport_size = get_viewport_rect().size
@@ -270,19 +271,19 @@ func handle_input() -> void:
 		for player in players_node.get_children():
 			if is_instance_valid(player):
 				player.set_input(Vector2.ZERO)
-				player.set_burning(false)
-		space_was_pressed = false
+		shift_was_pressed = false
+		mobile_dash_requested = false
 		return
 
 	if console_open:
 		if player_one != null and is_instance_valid(player_one):
 			player_one.set_input(Vector2.ZERO)
-			player_one.set_burning(false)
-		space_was_pressed = false
+		shift_was_pressed = false
+		mobile_dash_requested = false
 		return
 
 	var players = players_node.get_children()
-	var space_pressed: bool = Input.is_key_pressed(KEY_SPACE)
+	var shift_pressed: bool = Input.is_key_pressed(KEY_SHIFT)
 
 	if players.size() > 0 and is_instance_valid(players[0]):
 		var keyboard_input: Vector2 = Input.get_vector("p1_left", "p1_right", "p1_up", "p1_down")
@@ -290,15 +291,15 @@ func handle_input() -> void:
 		if mobile_controls != null and mobile_controls.visible:
 			mobile_input = mobile_controls.get_move_vector()
 		players[0].set_input((keyboard_input + mobile_input).limit_length())
-		var mobile_burn: bool = mobile_controls != null and mobile_controls.visible and mobile_controls.is_burn_active()
-		players[0].set_burning(Input.is_key_pressed(KEY_SHIFT) or mobile_burn)
-		if space_pressed and !space_was_pressed:
-			players[0].fire_green_satellites(players)
+
+		if (shift_pressed and !shift_was_pressed) or mobile_dash_requested:
+			players[0].try_dash_attack()
 
 	if players.size() > 1 and is_instance_valid(players[1]):
 		players[1].set_input(get_npc_input(players[1]))
 
-	space_was_pressed = space_pressed
+	shift_was_pressed = shift_pressed
+	mobile_dash_requested = false
 
 func get_npc_input(npc: Node2D) -> Vector2:
 	if player_one == null or !is_instance_valid(player_one):
@@ -319,7 +320,7 @@ func setup_mobile_controls() -> void:
 		return
 
 	mobile_controls.visible = should_show_mobile_controls()
-	mobile_controls.fire_requested.connect(_on_mobile_fire_requested)
+	mobile_controls.dash_requested.connect(_on_mobile_dash_requested)
 
 func setup_round_end_overlay() -> void:
 	round_end_overlay.visible = false
@@ -332,13 +333,11 @@ func setup_round_end_overlay() -> void:
 func should_show_mobile_controls() -> bool:
 	return OS.has_feature("android") or OS.has_feature("ios") or DisplayServer.is_touchscreen_available()
 
-func _on_mobile_fire_requested() -> void:
+func _on_mobile_dash_requested() -> void:
 	if console_open or round_over:
 		return
 
-	var players = players_node.get_children()
-	if players.size() > 0 and is_instance_valid(players[0]):
-		players[0].fire_green_satellites(players)
+	mobile_dash_requested = true
 
 func check_round_end() -> void:
 	if round_over:
@@ -364,7 +363,6 @@ func end_round(winner: Node2D) -> void:
 	for player in players_node.get_children():
 		if is_instance_valid(player):
 			player.set_input(Vector2.ZERO)
-			player.set_burning(false)
 
 	if winner != null and is_instance_valid(winner):
 		round_end_title.text = "Player %d Wins" % int(winner.get("player_id"))

@@ -284,7 +284,7 @@ offset_right = -28.0
 offset_bottom = -28.0
 mouse_filter = 2
 script = ExtResource("3_button_icon")
-icon_type = "burn"
+icon_type = "dash"
 
 [node name="FireButton" type="Button" parent="CanvasLayer/MobileControls/Buttons" unique_id=951597184]
 layout_mode = 0
@@ -309,4 +309,4 @@ offset_right = -22.0
 offset_bottom = -22.0
 mouse_filter = 2
 script = ExtResource("3_button_icon")
-icon_type = "fire"
+icon_type = "rotate"

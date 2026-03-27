@@ -3,212 +3,160 @@ extends CharacterBody2D
 const GREEN_SATELLITE_SCENE = preload("res://GreenSatellite.tscn")
 
 @export var move_speed: float = 1450.0
-@export var rotation_speed: float = 2.0
 @export var player_id: int = 0
 
-const BASE_MODEL_SCALE := 3.35
-const MODEL_REGION_HEIGHT_RATIO := 0.38
-const BODY_OUTLINE_WIDTH := 18.0
-const BODY_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.95)
-const BODY_OUTLINE_POINT_COUNT := 48
-const DAMAGE_NUMBER_OFFSET := Vector2(0, -170)
-const KNOCKBACK_DISTANCE := 240.0
-const FLASH_TIME := 0.12
-const HIT_COOLDOWN := 0.08
-const ORB_GROWTH_FACTOR := 1.05
-const BURN_SPEED_MULTIPLIER := 3.0
-const BURN_TICK_TIME := 1.0
-const BURN_TRAIL_LIFETIME := 1.0
-const BURN_SOUND_MIX_RATE := 22050.0
-const BURN_SOUND_BUFFER_LENGTH := 0.2
-const BURN_SOUND_VOLUME_DB := -10.0
+const BASE_MODEL_SCALE := 3.1
+const FACING_SMOOTHNESS := 16.0
+const MAX_ENERGY := 10
+const DASH_ENERGY_COST := 3
+const DASH_COOLDOWN := 0.45
+const DASH_TIME := 0.1
+const DASH_EASE_OUT_DISTANCE_MULTIPLIER := 0.92
+const TIP_DAMAGE := 10
+const CRYSTAL_DAMAGE := 10
+const HIT_COOLDOWN := 0.16
+const CLASH_COOLDOWN := 0.12
+const CLASH_KNOCKBACK_DISTANCE := 220.0
+const BODY_KNOCKBACK_DISTANCE := 250.0
+const LABEL_MARGIN := 120.0
+const DAMAGE_NUMBER_OFFSET := Vector2(0, -240)
+const STATS_NORMAL_COLOR := Color.WHITE
+const STATS_DAMAGE_COLOR := Color(1.0, 0.2, 0.2)
+const STATS_DAMAGE_FLASH_TIME := 0.28
+const BODY_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.97)
 const DAMAGE_SOUND_MIX_RATE := 22050.0
 const DAMAGE_SOUND_DURATION := 0.28
 const DAMAGE_SOUND_VOLUME_DB := -7.0
-const STATS_DAMAGE_FLASH_TIME := 0.28
-const STATS_NORMAL_COLOR := Color.WHITE
-const STATS_DAMAGE_COLOR := Color(1.0, 0.2, 0.2)
-const STATS_MARGIN := 110.0
-const MAX_GREEN_SATELLITES := 8
-const SATELLITE_VOLLEY_INTERVAL := 0.1
-const SATELLITE_FIRE_SOUND_MIX_RATE := 22050.0
-const SATELLITE_FIRE_SOUND_DURATION := 0.14
-const SATELLITE_FIRE_SOUND_VOLUME_DB := -5.0
 const PICKUP_SOUND_MIX_RATE := 22050.0
 const PICKUP_SOUND_DURATION := 0.32
 const PICKUP_SOUND_VOLUME_DB := -5.0
-const MODEL_NORMAL_COLOR := Color.WHITE
-const MODEL_BURN_COLOR := Color(0.35, 1.0, 0.35)
-const MODEL_DAMAGE_COLOR := Color(1.0, 0.25, 0.25)
-const MODEL_TINT_SHADER_CODE := """
-shader_type canvas_item;
+const CLASH_SOUND_MIX_RATE := 22050.0
+const CLASH_SOUND_DURATION := 0.18
+const CLASH_SOUND_VOLUME_DB := -4.0
+const BODY_POINT_COUNT := 48
 
-uniform vec4 base_core_color : source_color = vec4(0.98, 0.99, 1.0, 1.0);
-uniform vec4 base_glow_color : source_color = vec4(0.35, 0.72, 1.0, 1.0);
-uniform vec4 tint_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
-uniform float tint_strength : hint_range(0.0, 1.0) = 0.0;
-uniform float outline_size = 4.5;
-
-void fragment() {
-	vec4 tex = texture(TEXTURE, UV);
-	vec2 px = TEXTURE_PIXEL_SIZE * outline_size;
-
-	float a_r1 = texture(TEXTURE, UV + vec2(px.x, 0.0)).a;
-	float a_l1 = texture(TEXTURE, UV + vec2(-px.x, 0.0)).a;
-	float a_u1 = texture(TEXTURE, UV + vec2(0.0, -px.y)).a;
-	float a_d1 = texture(TEXTURE, UV + vec2(0.0, px.y)).a;
-	float a_ur1 = texture(TEXTURE, UV + vec2(px.x, -px.y)).a;
-	float a_ul1 = texture(TEXTURE, UV + vec2(-px.x, -px.y)).a;
-	float a_dr1 = texture(TEXTURE, UV + vec2(px.x, px.y)).a;
-	float a_dl1 = texture(TEXTURE, UV + vec2(-px.x, px.y)).a;
-
-	float a_r2 = texture(TEXTURE, UV + vec2(px.x * 2.0, 0.0)).a;
-	float a_l2 = texture(TEXTURE, UV + vec2(-px.x * 2.0, 0.0)).a;
-	float a_u2 = texture(TEXTURE, UV + vec2(0.0, -px.y * 2.0)).a;
-	float a_d2 = texture(TEXTURE, UV + vec2(0.0, px.y * 2.0)).a;
-
-	float max_neighbor = max(
-		max(max(a_r1, a_l1), max(a_u1, a_d1)),
-		max(max(a_ur1, a_ul1), max(a_dr1, a_dl1))
-	);
-	max_neighbor = max(max_neighbor, max(max(a_r2, a_l2), max(a_u2, a_d2)));
-
-	float min_neighbor = min(
-		min(min(a_r1, a_l1), min(a_u1, a_d1)),
-		min(min(a_ur1, a_ul1), min(a_dr1, a_dl1))
-	);
-	min_neighbor = min(min_neighbor, min(min(a_r2, a_l2), min(a_u2, a_d2)));
-
-	float inside_edge = smoothstep(0.04, 0.65, tex.a - min_neighbor) * step(0.02, tex.a);
-	float outer_glow = smoothstep(0.03, 0.45, max_neighbor) * (1.0 - step(0.02, tex.a));
-	float outline_alpha = max(inside_edge, outer_glow * 0.85);
-
-	vec3 outline_color = mix(base_glow_color.rgb, base_core_color.rgb, clamp(inside_edge * 1.15, 0.0, 1.0));
-	outline_color = mix(outline_color, tint_color.rgb, tint_strength * 0.88);
-
-	COLOR = vec4(outline_color, outline_alpha);
-}
-"""
-const TRAIL_OUTLINE_SHADER_CODE := """
-shader_type canvas_item;
-
-uniform vec4 outline_color : source_color = vec4(0.35, 1.0, 0.35, 0.95);
-uniform float outline_size = 4.0;
-
-void fragment() {
-	vec4 tex = texture(TEXTURE, UV);
-	vec2 step = TEXTURE_PIXEL_SIZE * outline_size;
-
-	float neighbor_alpha = 0.0;
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV + vec2(step.x, 0.0)).a);
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV + vec2(-step.x, 0.0)).a);
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV + vec2(0.0, step.y)).a);
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV + vec2(0.0, -step.y)).a);
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV + step).a);
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV - step).a);
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV + vec2(step.x, -step.y)).a);
-	neighbor_alpha = max(neighbor_alpha, texture(TEXTURE, UV + vec2(-step.x, step.y)).a);
-
-	float outline_alpha = max(neighbor_alpha - tex.a, 0.0);
-	COLOR = vec4(outline_color.rgb, outline_alpha * outline_color.a);
-}
-"""
-
-var attack: int = 10
 var hp: int = 100
-var alive: bool = true
+var energy: int = 0
+var alive := true
 
 var move_input: Vector2 = Vector2.ZERO
+var facing_direction: Vector2 = Vector2.RIGHT
 var recently_hit := {}
-var stats_flash_tween: Tween = null
-var burn_tick_timer := 0.0
-var burn_active := false
-var growth_steps: int = 0
-var model_flash_tween: Tween = null
-var sprite_tint_material: ShaderMaterial = null
-var burn_trail_material: ShaderMaterial = null
+var recent_clashes := {}
 var green_satellites: Array = []
-var pending_satellite_volley: Array = []
-var satellite_volley_target: Node2D = null
-var satellite_volley_timer := 0.0
-var burn_audio_player: AudioStreamPlayer2D = null
-var burn_audio_playback: AudioStreamGeneratorPlayback = null
-var burn_audio_phase := 0.0
-var burn_audio_noise_phase := 0.0
-var damage_audio_player: AudioStreamPlayer2D = null
-var damage_audio_playback: AudioStreamGeneratorPlayback = null
-var satellite_fire_audio_player: AudioStreamPlayer = null
+var stats_flash_tween: Tween = null
+var dash_tween: Tween = null
+var dash_cooldown_remaining := 0.0
+var is_dashing := false
+var damage_audio_player: AudioStreamPlayer = null
 var pickup_audio_player: AudioStreamPlayer = null
+var clash_audio_player: AudioStreamPlayer = null
 
 @onready var label = $Label
-@onready var sprite = $Sprite2D
 @onready var body_collision_shape = $CollisionShape2D
+@onready var body_hurtbox = $BodyHurtbox
+@onready var tip = $Tip
+@onready var tip_collision_shape = $Tip/CollisionShape2D
 
 func _ready() -> void:
-	$Tip.owner_player = self
-	apply_growth_scale()
+	tip.owner_player = self
+	scale = Vector2.ONE * BASE_MODEL_SCALE
 	label.top_level = true
 	label.add_theme_color_override("font_color", STATS_NORMAL_COLOR)
-	create_body_outline()
-	setup_model_material()
-	setup_visible_tip_model()
-	setup_burn_trail_material()
-	setup_burn_audio()
-	setup_damage_audio()
-	setup_satellite_fire_audio()
-	setup_pickup_audio()
-	update_model_visual()
-	update_label_position()
+	create_visual_model()
+	setup_audio()
 	update_label()
-
-func _process(_delta: float) -> void:
-	update_burn_audio()
+	update_label_position()
 
 func _physics_process(delta: float) -> void:
 	if !alive:
 		return
 
-	rotation += rotation_speed * delta
-	update_burn(delta)
-	update_satellite_volley(delta)
-	var current_move_speed: float = move_speed * (BURN_SPEED_MULTIPLIER if burn_active else 1.0)
-	velocity = move_input.normalized() * current_move_speed
-	move_and_slide()
-	if burn_active:
-		spawn_burn_trail()
+	update_cooldowns(delta)
+
+	if dash_cooldown_remaining > 0.0:
+		dash_cooldown_remaining = maxf(dash_cooldown_remaining - delta, 0.0)
+
+	if !is_dashing:
+		if move_input.length_squared() > 0.0001:
+			facing_direction = move_input.normalized()
+			rotation = lerp_angle(rotation, facing_direction.angle(), minf(delta * FACING_SMOOTHNESS, 1.0))
+		velocity = move_input.normalized() * move_speed
+		move_and_slide()
+
 	update_label_position()
 
+func update_cooldowns(delta: float) -> void:
 	for target in recently_hit.keys():
 		recently_hit[target] -= delta
-		if recently_hit[target] <= 0:
+		if recently_hit[target] <= 0.0:
 			recently_hit.erase(target)
+
+	for target in recent_clashes.keys():
+		recent_clashes[target] -= delta
+		if recent_clashes[target] <= 0.0:
+			recent_clashes.erase(target)
 
 func set_input(dir: Vector2) -> void:
 	move_input = dir
 
-func set_burning(active: bool) -> void:
-	burn_active = active and growth_steps > 0
-	if burn_active and burn_tick_timer <= 0.0:
-		burn_tick_timer = BURN_TICK_TIME
-	elif !burn_active:
-		burn_tick_timer = 0.0
-	update_model_visual()
+func set_rotation_input(value: float) -> void:
+	return
+
+func try_dash_attack() -> bool:
+	if !alive or is_dashing or dash_cooldown_remaining > 0.0:
+		return false
+	if energy < DASH_ENERGY_COST:
+		return false
+
+	energy -= DASH_ENERGY_COST
+	sync_energy_satellites()
+	update_label()
+
+	var dash_direction := get_tip_direction()
+	var dash_distance: float = get_tip_local_center().length() * scale.x * DASH_EASE_OUT_DISTANCE_MULTIPLIER
+	var destination := global_position + dash_direction * dash_distance
+
+	is_dashing = true
+	dash_cooldown_remaining = DASH_COOLDOWN
+	velocity = Vector2.ZERO
+
+	if dash_tween != null:
+		dash_tween.kill()
+
+	dash_tween = create_tween()
+	dash_tween.set_trans(Tween.TRANS_QUINT)
+	dash_tween.set_ease(Tween.EASE_OUT)
+	dash_tween.tween_property(self, "global_position", destination, DASH_TIME)
+	dash_tween.tween_callback(_finish_dash)
+	return true
+
+func _finish_dash() -> void:
+	is_dashing = false
+	dash_tween = null
 
 func gain_white_orb() -> void:
-	attack += 1
-	hp += 1
-	grow_from_orb()
-	update_label()
+	gain_energy(1)
 
 func gain_blue_orb() -> void:
-	hp += 2
-	grow_from_orb()
-	update_label()
+	gain_energy(1)
 
 func gain_red_orb() -> void:
-	attack += 2
-	grow_from_orb()
+	gain_energy(1)
+
+func gain_energy(amount: int = 1) -> bool:
+	var previous_energy := energy
+	energy = mini(energy + amount, MAX_ENERGY)
+	if energy == previous_energy:
+		return false
+
+	sync_energy_satellites()
 	update_label()
+	play_green_pickup_sound()
+	return true
+
+func add_green_satellite() -> bool:
+	return gain_energy(1)
 
 func can_hit(target: Node) -> bool:
 	return alive and target != self and !recently_hit.has(target)
@@ -216,57 +164,28 @@ func can_hit(target: Node) -> bool:
 func register_hit(target: Node) -> void:
 	recently_hit[target] = HIT_COOLDOWN
 
-func take_damage(amount: int) -> void:
-	if !alive:
-		return
+func can_clash(target: Node) -> bool:
+	return alive and target != self and !recent_clashes.has(target)
 
-	hp -= amount
-	print(name, " took ", amount, " damage, hp now ", hp)
-	play_damage_impact_sound()
-	play_damage_feedback(amount)
-	flash_stats_damage(amount)
+func register_clash(target: Node) -> void:
+	recent_clashes[target] = CLASH_COOLDOWN
 
-	if hp <= 0:
-		die()
+func is_body_hurtbox(area: Area2D) -> bool:
+	return area == body_hurtbox
 
-	if hp <= 0:
-		die()
+func get_tip_direction() -> Vector2:
+	var direction: Vector2 = (get_tip_global_position() - global_position).normalized()
+	if direction == Vector2.ZERO:
+		return facing_direction
+	return direction
 
-func die() -> void:
-	alive = false
-	pending_satellite_volley.clear()
-	satellite_volley_target = null
-	stop_burn_audio()
-	clear_green_satellites()
-	label.queue_free()
-	queue_free()
+func get_tip_global_position() -> Vector2:
+	return tip.to_global(get_tip_local_center())
 
-func resolve_combat(other: Node) -> void:
-	if !alive or !other.alive:
-		return
-
-	if !can_hit(other) or !other.can_hit(self):
-		return
-
-	print(name, " hit ", other.name, " | my atk=", attack, " their atk=", other.attack)
-
-	register_hit(other)
-	other.register_hit(self)
-
-	var my_attack = attack
-	var their_attack = other.attack
-
-	var push_direction_to_self: Vector2 = (global_position - other.global_position).normalized()
-	if push_direction_to_self == Vector2.ZERO:
-		push_direction_to_self = Vector2.UP
-
-	var push_direction_to_other: Vector2 = -push_direction_to_self
-
-	take_damage(their_attack)
-	other.take_damage(my_attack)
-
-	apply_knockback(push_direction_to_self)
-	other.apply_knockback(push_direction_to_other)
+func get_tip_local_center() -> Vector2:
+	if tip_collision_shape != null:
+		return tip_collision_shape.position
+	return Vector2(get_body_radius() * 2.2, 0.0)
 
 func deal_tip_damage(other: Node) -> void:
 	if !alive or other == null or !is_instance_valid(other):
@@ -275,46 +194,110 @@ func deal_tip_damage(other: Node) -> void:
 		return
 
 	register_hit(other)
+	other.take_damage(TIP_DAMAGE)
+
 	var push_direction_to_other: Vector2 = (other.global_position - global_position).normalized()
 	if push_direction_to_other == Vector2.ZERO:
-		push_direction_to_other = Vector2.UP
+		push_direction_to_other = get_tip_direction()
+	other.apply_knockback(push_direction_to_other, BODY_KNOCKBACK_DISTANCE)
 
-	other.take_damage(attack)
-	other.apply_knockback(push_direction_to_other)
+func handle_tip_clash(other: Node) -> void:
+	if !alive or other == null or !is_instance_valid(other):
+		return
+	if !other.alive:
+		return
+	if int(player_id) > int(other.player_id):
+		return
+	if !can_clash(other) or !other.can_clash(self):
+		return
 
-func update_label() -> void:
-	label.text = "ATK %d\nHP %d" % [attack, hp]
+	register_clash(other)
+	other.register_clash(self)
 
-func update_label_position() -> void:
-	var camera := get_viewport().get_camera_2d()
-	var camera_zoom := Vector2.ONE
-	if camera != null:
-		camera_zoom = camera.zoom
+	var separation: Vector2 = (get_tip_global_position() - other.get_tip_global_position()).normalized()
+	if separation == Vector2.ZERO:
+		separation = (global_position - other.global_position).normalized()
+	if separation == Vector2.ZERO:
+		separation = Vector2.RIGHT
 
-	# Counter the world-camera zoom so the text stays readable on screen.
-	label.scale = Vector2.ONE / camera_zoom
+	apply_knockback(separation, CLASH_KNOCKBACK_DISTANCE)
+	other.apply_knockback(-separation, CLASH_KNOCKBACK_DISTANCE)
+	play_clash_sound()
 
-	var sprite_height := 0.0
-	if sprite.texture != null:
-		var visible_size: Vector2 = sprite.texture.get_size()
-		if sprite.region_enabled:
-			visible_size = sprite.region_rect.size
-		sprite_height = visible_size.y * sprite.scale.y * scale.y
+func apply_knockback(direction: Vector2, distance: float = BODY_KNOCKBACK_DISTANCE) -> void:
+	var tween := create_tween()
+	tween.set_trans(Tween.TRANS_BACK)
+	tween.set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "global_position", global_position + direction * distance, 0.16)
 
-	var label_size: Vector2 = label.size * label.scale
-	var world_offset: Vector2 = Vector2(0, -((sprite_height * 0.5) + (STATS_MARGIN * scale.y)))
-	label.global_position = global_position + world_offset - Vector2(label_size.x * 0.5, label_size.y)
+func hit_by_player(player: Node2D) -> void:
+	if !alive or player == null or !is_instance_valid(player):
+		return
+	if recently_hit.has(player):
+		return
 
-func play_damage_feedback(amount: int) -> void:
-	flash_red()
+	recently_hit[player] = HIT_COOLDOWN
+	play_clash_sound()
+
+func get_attack_power() -> int:
+	return CRYSTAL_DAMAGE
+
+func get_camera_zoom_factor() -> float:
+	return 1.0
+
+func get_green_satellite_count() -> int:
+	cleanup_green_satellites()
+	return green_satellites.size()
+
+func get_green_satellite_index(satellite: Node) -> int:
+	cleanup_green_satellites()
+	return green_satellites.find(satellite)
+
+func sync_energy_satellites() -> void:
+	cleanup_green_satellites()
+	if get_tree().current_scene == null:
+		return
+
+	while green_satellites.size() < energy:
+		var satellite = GREEN_SATELLITE_SCENE.instantiate()
+		satellite.owner_player = self
+		get_tree().current_scene.add_child(satellite)
+		green_satellites.append(satellite)
+
+	while green_satellites.size() > energy:
+		var satellite_to_remove = green_satellites.pop_back()
+		if is_instance_valid(satellite_to_remove):
+			satellite_to_remove.queue_free()
+
+func cleanup_green_satellites() -> void:
+	for i in range(green_satellites.size() - 1, -1, -1):
+		if !is_instance_valid(green_satellites[i]):
+			green_satellites.remove_at(i)
+
+func clear_green_satellites() -> void:
+	for satellite in green_satellites:
+		if is_instance_valid(satellite):
+			satellite.queue_free()
+	green_satellites.clear()
+
+func take_damage(amount: int) -> void:
+	if !alive:
+		return
+
+	hp -= amount
+	play_damage_impact_sound()
+	flash_stats_damage(amount)
 	show_damage_number(amount)
+
+	if hp <= 0:
+		kill_instantly()
 
 func flash_stats_damage(amount: int) -> void:
 	if stats_flash_tween != null:
 		stats_flash_tween.kill()
 
 	label.add_theme_color_override("font_color", STATS_DAMAGE_COLOR)
-	label.text = "ATK %d\nHP -%d" % [attack, amount]
+	label.text = "HP -%d\nEN %d" % [amount, energy]
 
 	stats_flash_tween = create_tween()
 	stats_flash_tween.tween_interval(STATS_DAMAGE_FLASH_TIME)
@@ -325,22 +308,6 @@ func restore_stats_label() -> void:
 	update_label()
 	stats_flash_tween = null
 
-func flash_red() -> void:
-	if model_flash_tween != null:
-		model_flash_tween.kill()
-
-	set_model_tint(MODEL_DAMAGE_COLOR, 1.0)
-
-	model_flash_tween = create_tween()
-	model_flash_tween.tween_interval(FLASH_TIME)
-	model_flash_tween.tween_callback(update_model_visual)
-
-func apply_knockback(direction: Vector2) -> void:
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_BACK)
-	tween.set_ease(Tween.EASE_OUT)
-	tween.tween_property(self, "global_position", global_position + direction * KNOCKBACK_DISTANCE, 0.18)
-
 func show_damage_number(amount: int) -> void:
 	var damage_label := Label.new()
 	damage_label.top_level = true
@@ -348,7 +315,7 @@ func show_damage_number(amount: int) -> void:
 	damage_label.text = "-%d" % amount
 	damage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	damage_label.add_theme_color_override("font_color", Color(1.0, 0.15, 0.15))
-	damage_label.add_theme_font_size_override("font_size", 48)
+	damage_label.add_theme_font_size_override("font_size", 52)
 	damage_label.global_position = global_position + (DAMAGE_NUMBER_OFFSET * scale.x)
 	get_tree().current_scene.add_child(damage_label)
 	damage_label.global_position -= damage_label.size * 0.5
@@ -359,292 +326,97 @@ func show_damage_number(amount: int) -> void:
 	tween.tween_property(damage_label, "modulate:a", 0.0, 0.5)
 	tween.chain().tween_callback(damage_label.queue_free)
 
-func grow_from_orb() -> void:
-	growth_steps += 1
-	apply_growth_scale()
-	update_label_position()
+func update_label() -> void:
+	label.text = "HP %d\nEN %d" % [hp, energy]
 
-func add_green_satellite() -> bool:
-	cleanup_green_satellites()
-	if green_satellites.size() >= MAX_GREEN_SATELLITES or get_tree().current_scene == null:
-		return false
+func update_label_position() -> void:
+	var camera := get_viewport().get_camera_2d()
+	var camera_zoom := Vector2.ONE
+	if camera != null:
+		camera_zoom = camera.zoom
 
-	var satellite = GREEN_SATELLITE_SCENE.instantiate()
-	satellite.owner_player = self
-	get_tree().current_scene.add_child(satellite)
-	green_satellites.append(satellite)
-	return true
+	label.scale = Vector2.ONE / camera_zoom
 
-func remove_green_satellite(satellite: Node) -> void:
-	cleanup_green_satellites()
-	green_satellites.erase(satellite)
-	if is_instance_valid(satellite):
-		satellite.queue_free()
+	var body_radius := get_body_radius() * scale.y
+	var label_size: Vector2 = label.size * label.scale
+	var world_offset := Vector2(0.0, -(body_radius + (LABEL_MARGIN * scale.y)))
+	label.global_position = global_position + world_offset - Vector2(label_size.x * 0.5, label_size.y)
 
-func release_green_satellite(satellite: Node) -> void:
-	cleanup_green_satellites()
-	green_satellites.erase(satellite)
-
-func clear_green_satellites() -> void:
-	for satellite in green_satellites:
-		if is_instance_valid(satellite):
-			satellite.queue_free()
-	green_satellites.clear()
-
-func cleanup_green_satellites() -> void:
-	for i in range(green_satellites.size() - 1, -1, -1):
-		if !is_instance_valid(green_satellites[i]):
-			green_satellites.remove_at(i)
-
-func get_green_satellite_count() -> int:
-	cleanup_green_satellites()
-	return green_satellites.size()
-
-func get_green_satellite_index(satellite: Node) -> int:
-	cleanup_green_satellites()
-	return green_satellites.find(satellite)
-
-func get_attack_power() -> int:
-	return attack
-
-func get_camera_zoom_factor() -> float:
-	return max(scale.x / BASE_MODEL_SCALE, 1.0)
-
-func fire_green_satellites(players: Array) -> void:
-	cleanup_green_satellites()
-	if green_satellites.is_empty() or !pending_satellite_volley.is_empty():
-		return
-
-	var nearest_enemy: Node2D = get_nearest_enemy_player(players)
-	if nearest_enemy == null:
-		return
-
-	pending_satellite_volley = green_satellites.duplicate()
-	satellite_volley_target = nearest_enemy
-	satellite_volley_timer = 0.0
-
-func get_nearest_enemy_player(players: Array) -> Node2D:
-	var nearest_enemy: Node2D = null
-	var nearest_distance := INF
-
-	for candidate in players:
-		var candidate_node := candidate as Node2D
-		if candidate_node == null or candidate_node == self or !is_instance_valid(candidate_node):
-			continue
-		if candidate_node.has_method("take_damage"):
-			var distance_to_candidate: float = global_position.distance_squared_to(candidate_node.global_position)
-			if distance_to_candidate < nearest_distance:
-				nearest_distance = distance_to_candidate
-				nearest_enemy = candidate_node
-
-	return nearest_enemy
-
-func update_satellite_volley(delta: float) -> void:
-	if pending_satellite_volley.is_empty():
-		return
-
-	if satellite_volley_target == null or !is_instance_valid(satellite_volley_target):
-		pending_satellite_volley.clear()
-		satellite_volley_target = null
-		return
-
-	satellite_volley_timer -= delta
-	while satellite_volley_timer <= 0.0 and !pending_satellite_volley.is_empty():
-		var satellite = pending_satellite_volley.pop_front()
-		if is_instance_valid(satellite):
-			satellite.call("launch_at", satellite_volley_target)
-			play_satellite_fire_sound()
-
-		if pending_satellite_volley.is_empty():
-			satellite_volley_target = null
-			satellite_volley_timer = 0.0
-			break
-
-		satellite_volley_timer += SATELLITE_VOLLEY_INTERVAL
-
-func update_burn(delta: float) -> void:
-	if !burn_active:
-		return
-
-	if growth_steps <= 0:
-		set_burning(false)
-		return
-
-	burn_tick_timer -= delta
-	while burn_tick_timer <= 0.0 and burn_active:
-		apply_burn_tick()
-		if growth_steps <= 0:
-			set_burning(false)
-			break
-		burn_tick_timer += BURN_TICK_TIME
-
-func apply_burn_tick() -> void:
-	hp = max(hp - 1, 0)
-	attack = max(attack - 1, 0)
-	growth_steps = max(growth_steps - 1, 0)
-	apply_growth_scale()
-	update_label()
-
-	if hp <= 0:
-		die()
-
-func apply_growth_scale() -> void:
-	var growth_scale: float = pow(ORB_GROWTH_FACTOR, float(growth_steps))
-	scale = Vector2.ONE * (BASE_MODEL_SCALE * growth_scale)
-
-func kill_instantly() -> void:
-	if !alive:
-		return
-
-	hp = 0
-	update_label()
-	die()
-
-func update_model_visual() -> void:
-	if burn_active:
-		set_model_tint(MODEL_BURN_COLOR, 1.0)
-	else:
-		set_model_tint(MODEL_NORMAL_COLOR, 0.0)
-
-func get_model_color() -> Color:
-	if burn_active:
-		return MODEL_BURN_COLOR
-	return MODEL_NORMAL_COLOR
-
-func setup_model_material() -> void:
-	var shader := Shader.new()
-	shader.code = MODEL_TINT_SHADER_CODE
-
-	sprite_tint_material = ShaderMaterial.new()
-	sprite_tint_material.shader = shader
-	sprite.material = sprite_tint_material
-
-func setup_visible_tip_model() -> void:
-	if sprite.texture == null:
-		return
-
-	var texture_size: Vector2 = sprite.texture.get_size()
-	var region_height: float = texture_size.y * MODEL_REGION_HEIGHT_RATIO
-	sprite.region_enabled = true
-	sprite.region_rect = Rect2(0.0, 0.0, texture_size.x, region_height)
-	sprite.offset = Vector2(0.0, -((texture_size.y - region_height) * 0.5))
-
-func create_body_outline() -> void:
-	if body_collision_shape == null:
-		return
-
+func get_body_radius() -> float:
 	var circle_shape := body_collision_shape.shape as CircleShape2D
 	if circle_shape == null:
-		return
+		return 180.0
+	return circle_shape.radius
 
+func create_visual_model() -> void:
+	create_silhouette_outline()
+
+func create_silhouette_outline() -> void:
 	var outline := Line2D.new()
-	outline.name = "BodyOutline"
-	outline.width = BODY_OUTLINE_WIDTH
+	outline.name = "SilhouetteOutline"
+	outline.width = 16.0
 	outline.default_color = BODY_OUTLINE_COLOR
 	outline.antialiased = true
 	outline.closed = true
-	outline.z_index = -1
-	outline.position = body_collision_shape.position
-
-	var points := PackedVector2Array()
-	for i in range(BODY_OUTLINE_POINT_COUNT):
-		var angle: float = TAU * float(i) / float(BODY_OUTLINE_POINT_COUNT)
-		points.append(Vector2(cos(angle), sin(angle)) * circle_shape.radius)
-	outline.points = points
+	outline.z_index = 3
+	outline.points = build_silhouette_outline()
 	add_child(outline)
 
-func set_model_tint(color: Color, strength: float) -> void:
-	if sprite_tint_material == null:
-		return
+func build_silhouette_outline() -> PackedVector2Array:
+	var radius := get_body_radius()
+	var attach_upper_angle := deg_to_rad(-48.0)
+	var attach_lower_angle := deg_to_rad(-12.0)
+	var attach_upper := Vector2(cos(attach_upper_angle), sin(attach_upper_angle)) * radius
+	var attach_lower := Vector2(cos(attach_lower_angle), sin(attach_lower_angle)) * radius
+	var tip_point := Vector2(radius * 2.55, -radius * 1.95)
 
-	sprite_tint_material.set_shader_parameter("tint_color", color)
-	sprite_tint_material.set_shader_parameter("tint_strength", strength)
+	var points := PackedVector2Array([attach_upper, tip_point, attach_lower])
+	var arc_point_count := 36
+	for i in range(arc_point_count + 1):
+		var t: float = float(i) / float(arc_point_count)
+		var angle: float = lerp(attach_lower_angle, attach_upper_angle + TAU, t)
+		points.append(Vector2(cos(angle), sin(angle)) * radius)
+	return points
 
-func setup_burn_trail_material() -> void:
-	var shader := Shader.new()
-	shader.code = TRAIL_OUTLINE_SHADER_CODE
+func make_circle_points(radius: float, point_count: int) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in range(point_count):
+		var angle: float = TAU * float(i) / float(point_count)
+		points.append(Vector2(cos(angle), sin(angle)) * radius)
+	return points
 
-	burn_trail_material = ShaderMaterial.new()
-	burn_trail_material.shader = shader
-
-func setup_burn_audio() -> void:
-	burn_audio_player = AudioStreamPlayer2D.new()
-	burn_audio_player.top_level = true
-	burn_audio_player.max_distance = 100000.0
-	burn_audio_player.attenuation = 1.0
-	burn_audio_player.volume_db = BURN_SOUND_VOLUME_DB
-
-	var stream := AudioStreamGenerator.new()
-	stream.mix_rate = BURN_SOUND_MIX_RATE
-	stream.buffer_length = BURN_SOUND_BUFFER_LENGTH
-	burn_audio_player.stream = stream
-	add_child(burn_audio_player)
-
-func setup_damage_audio() -> void:
-	damage_audio_player = AudioStreamPlayer2D.new()
-	damage_audio_player.top_level = true
-	damage_audio_player.max_distance = 100000.0
-	damage_audio_player.attenuation = 1.0
+func setup_audio() -> void:
+	damage_audio_player = AudioStreamPlayer.new()
 	damage_audio_player.volume_db = DAMAGE_SOUND_VOLUME_DB
-
-	var stream := AudioStreamGenerator.new()
-	stream.mix_rate = DAMAGE_SOUND_MIX_RATE
-	stream.buffer_length = DAMAGE_SOUND_DURATION
-	damage_audio_player.stream = stream
+	damage_audio_player.stream = build_damage_stream()
 	add_child(damage_audio_player)
 
-func update_burn_audio() -> void:
-	if burn_audio_player == null:
-		return
+	pickup_audio_player = AudioStreamPlayer.new()
+	pickup_audio_player.volume_db = PICKUP_SOUND_VOLUME_DB
+	pickup_audio_player.stream = build_pickup_stream()
+	add_child(pickup_audio_player)
 
-	burn_audio_player.global_position = global_position
-
-	if burn_active:
-		if !burn_audio_player.playing:
-			burn_audio_player.play()
-			burn_audio_playback = burn_audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
-		fill_burn_audio_buffer()
-	else:
-		stop_burn_audio()
-
-func stop_burn_audio() -> void:
-	if burn_audio_player == null or !burn_audio_player.playing:
-		return
-
-	burn_audio_player.stop()
-	burn_audio_playback = null
-	burn_audio_phase = 0.0
-	burn_audio_noise_phase = 0.0
-
-func fill_burn_audio_buffer() -> void:
-	if burn_audio_playback == null:
-		return
-
-	var frames_available: int = burn_audio_playback.get_frames_available()
-	for i in range(frames_available):
-		var rumble_mod: float = sin(burn_audio_noise_phase * 0.4) * 0.5 + 0.5
-		var sub_rumble: float = sin(burn_audio_phase * 0.34) * 0.2
-		var engine_core: float = sin(burn_audio_phase) * 0.16
-		var engine_harmonic: float = sin(burn_audio_phase * 1.48) * 0.09
-		var pressure_wave: float = sin(burn_audio_phase * 0.18) * 0.08
-		var turbulence: float = (randf() * 2.0 - 1.0) * (0.025 + (0.04 * rumble_mod))
-		var sample: float = sub_rumble + engine_core + engine_harmonic + pressure_wave + turbulence
-		burn_audio_playback.push_frame(Vector2(sample, sample))
-
-		burn_audio_phase += TAU * 46.0 / BURN_SOUND_MIX_RATE
-		burn_audio_noise_phase += TAU * 3.0 / BURN_SOUND_MIX_RATE
+	clash_audio_player = AudioStreamPlayer.new()
+	clash_audio_player.volume_db = CLASH_SOUND_VOLUME_DB
+	clash_audio_player.stream = build_clash_stream()
+	add_child(clash_audio_player)
 
 func play_damage_impact_sound() -> void:
-	if damage_audio_player == null:
-		return
+	if damage_audio_player != null:
+		damage_audio_player.play()
 
-	damage_audio_player.global_position = global_position
-	damage_audio_player.play()
-	damage_audio_playback = damage_audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
-	if damage_audio_playback == null:
-		return
+func play_green_pickup_sound() -> void:
+	if pickup_audio_player != null:
+		pickup_audio_player.play()
 
+func play_clash_sound() -> void:
+	if clash_audio_player != null:
+		clash_audio_player.play()
+
+func build_damage_stream() -> AudioStreamWAV:
 	var frame_count: int = int(DAMAGE_SOUND_MIX_RATE * DAMAGE_SOUND_DURATION)
+	var buffer := StreamPeerBuffer.new()
+	buffer.big_endian = false
 	for i in range(frame_count):
 		var t: float = float(i) / DAMAGE_SOUND_MIX_RATE
 		var decay: float = exp(-7.5 * t)
@@ -652,83 +424,9 @@ func play_damage_impact_sound() -> void:
 		var bass: float = sin(TAU * low_sweep * t) * 0.28 * decay
 		var crunch: float = sin(TAU * 78.0 * t) * 0.16 * decay
 		var grit: float = (randf() * 2.0 - 1.0) * 0.08 * decay
-		var sample: float = bass + crunch + grit
-		damage_audio_playback.push_frame(Vector2(sample, sample))
-
-	var timer := get_tree().create_timer(DAMAGE_SOUND_DURATION + 0.03)
-	timer.timeout.connect(_stop_damage_impact_sound)
-
-func _stop_damage_impact_sound() -> void:
-	if damage_audio_player != null:
-		damage_audio_player.stop()
-	damage_audio_playback = null
-
-func spawn_burn_trail() -> void:
-	if burn_trail_material == null or sprite.texture == null or get_tree().current_scene == null:
-		return
-
-	var trail := Sprite2D.new()
-	trail.top_level = true
-	trail.z_index = sprite.z_index - 1
-	trail.texture = sprite.texture
-	trail.region_enabled = sprite.region_enabled
-	trail.region_rect = sprite.region_rect
-	trail.centered = sprite.centered
-	trail.offset = sprite.offset
-	trail.flip_h = sprite.flip_h
-	trail.flip_v = sprite.flip_v
-	trail.material = burn_trail_material
-	trail.global_position = sprite.global_position
-	trail.global_rotation = sprite.global_rotation
-	trail.scale = sprite.global_transform.get_scale()
-	trail.modulate = Color(1.0, 1.0, 1.0, 0.9)
-
-	get_tree().current_scene.add_child(trail)
-
-	var tween := trail.create_tween()
-	tween.tween_property(trail, "modulate:a", 0.0, BURN_TRAIL_LIFETIME)
-	tween.tween_callback(trail.queue_free)
-
-func play_satellite_fire_sound() -> void:
-	if satellite_fire_audio_player == null:
-		return
-
-	satellite_fire_audio_player.play()
-
-
-func play_green_pickup_sound() -> void:
-	if pickup_audio_player == null:
-		return
-
-	pickup_audio_player.play()
-
-func setup_satellite_fire_audio() -> void:
-	satellite_fire_audio_player = AudioStreamPlayer.new()
-	satellite_fire_audio_player.volume_db = SATELLITE_FIRE_SOUND_VOLUME_DB + 3.0
-	satellite_fire_audio_player.max_polyphony = 8
-	satellite_fire_audio_player.stream = build_satellite_fire_stream()
-	add_child(satellite_fire_audio_player)
-
-func setup_pickup_audio() -> void:
-	pickup_audio_player = AudioStreamPlayer.new()
-	pickup_audio_player.volume_db = PICKUP_SOUND_VOLUME_DB + 2.0
-	pickup_audio_player.max_polyphony = 4
-	pickup_audio_player.stream = build_pickup_stream()
-	add_child(pickup_audio_player)
-
-func build_satellite_fire_stream() -> AudioStreamWAV:
-	var frame_count: int = int(SATELLITE_FIRE_SOUND_MIX_RATE * SATELLITE_FIRE_SOUND_DURATION)
-	var buffer := StreamPeerBuffer.new()
-	buffer.big_endian = false
-	for i in range(frame_count):
-		var t: float = float(i) / SATELLITE_FIRE_SOUND_MIX_RATE
-		var decay: float = exp(-12.0 * t)
-		var sweep: float = 1400.0 - (900.0 * (t / SATELLITE_FIRE_SOUND_DURATION))
-		var core: float = sin(TAU * sweep * t) * 0.24 * decay
-		var sparkle: float = sin(TAU * (sweep * 1.8) * t) * 0.08 * decay
-		var sample: float = clampf(core + sparkle, -1.0, 1.0)
+		var sample: float = clampf(bass + crunch + grit, -1.0, 1.0)
 		buffer.put_16(int(round(sample * 32767.0)))
-	return make_wav_stream(buffer, SATELLITE_FIRE_SOUND_MIX_RATE)
+	return make_wav_stream(buffer, DAMAGE_SOUND_MIX_RATE)
 
 func build_pickup_stream() -> AudioStreamWAV:
 	var frame_count: int = int(PICKUP_SOUND_MIX_RATE * PICKUP_SOUND_DURATION)
@@ -744,6 +442,20 @@ func build_pickup_stream() -> AudioStreamWAV:
 		buffer.put_16(int(round(sample * 32767.0)))
 	return make_wav_stream(buffer, PICKUP_SOUND_MIX_RATE)
 
+func build_clash_stream() -> AudioStreamWAV:
+	var frame_count: int = int(CLASH_SOUND_MIX_RATE * CLASH_SOUND_DURATION)
+	var buffer := StreamPeerBuffer.new()
+	buffer.big_endian = false
+	for i in range(frame_count):
+		var t: float = float(i) / CLASH_SOUND_MIX_RATE
+		var decay: float = exp(-13.0 * t)
+		var ping_a: float = sin(TAU * 1650.0 * t) * 0.34 * decay
+		var ping_b: float = sin(TAU * 2440.0 * t) * 0.18 * decay
+		var bite: float = sin(TAU * 980.0 * t) * 0.12 * decay
+		var sample: float = clampf(ping_a + ping_b + bite, -1.0, 1.0)
+		buffer.put_16(int(round(sample * 32767.0)))
+	return make_wav_stream(buffer, CLASH_SOUND_MIX_RATE)
+
 func make_wav_stream(buffer: StreamPeerBuffer, mix_rate: float) -> AudioStreamWAV:
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
@@ -751,3 +463,17 @@ func make_wav_stream(buffer: StreamPeerBuffer, mix_rate: float) -> AudioStreamWA
 	stream.stereo = false
 	stream.data = buffer.data_array
 	return stream
+
+func kill_instantly() -> void:
+	if !alive:
+		return
+
+	alive = false
+	hp = 0
+	clear_green_satellites()
+	if stats_flash_tween != null:
+		stats_flash_tween.kill()
+	if dash_tween != null:
+		dash_tween.kill()
+	label.queue_free()
+	queue_free()

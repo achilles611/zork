@@ -44,18 +44,11 @@ func _physics_process(delta: float) -> void:
 func _on_body_entered(body: Node) -> void:
 	print("Orb touched by: ", body.name)
 
-	if !body.has_method("gain_white_orb"):
+	if !body.has_method("gain_energy"):
 		return
 
-	match orb_type:
-		OrbType.WHITE:
-			body.gain_white_orb()
-		OrbType.BLUE:
-			body.gain_blue_orb()
-		OrbType.RED:
-			body.gain_red_orb()
-
-	queue_free()
+	if bool(body.call("gain_energy", 1)):
+		queue_free()
 
 func update_visual() -> void:
 	if has_node("Sprite2D"):

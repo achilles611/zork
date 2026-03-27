@@ -8,11 +8,9 @@ func _process(delta: float) -> void:
 	rotation += delta * 0.8
 
 func _on_body_entered(body: Node) -> void:
-	if body.has_method("add_green_satellite"):
-		var added: bool = bool(body.call("add_green_satellite"))
+	if body.has_method("gain_energy"):
+		var added: bool = bool(body.call("gain_energy", 1))
 		if added:
-			if body.has_method("play_green_pickup_sound"):
-				body.call("play_green_pickup_sound")
 			queue_free()
 
 func create_visuals() -> void:

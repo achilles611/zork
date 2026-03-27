@@ -1,6 +1,6 @@
 extends Control
 
-@export_enum("fire", "burn") var icon_type := "fire":
+@export_enum("rotate", "dash") var icon_type := "rotate":
 	set(value):
 		icon_type = value
 		queue_redraw()
@@ -14,82 +14,58 @@ func _notification(what: int) -> void:
 		queue_redraw()
 
 func _draw() -> void:
-	if icon_type == "burn":
-		draw_burn_icon()
+	if icon_type == "dash":
+		draw_dash_icon()
 	else:
-		draw_fire_icon()
+		draw_rotate_icon()
 
-func draw_fire_icon() -> void:
-	var body_color := Color(0.58, 1.0, 0.72, 1.0)
-	var glow_color := Color(0.28, 1.0, 0.56, 0.22)
-	var outline_color := Color(0.9, 1.0, 0.95, 0.92)
-	var flame_outer := Color(1.0, 0.82, 0.32, 0.95)
-	var flame_inner := Color(1.0, 0.45, 0.16, 0.95)
-
-	var orb_center: Vector2 = size * Vector2(0.58, 0.48)
-	var orb_radius: float = min(size.x, size.y) * 0.17
-	draw_circle(orb_center, orb_radius * 1.7, glow_color)
-
-	var rocket_points := PackedVector2Array([
-		size * Vector2(0.12, 0.50),
-		size * Vector2(0.34, 0.38),
-		size * Vector2(0.34, 0.62),
-	])
-	draw_colored_polygon(rocket_points, Color.WHITE)
-
-	var flame_outer_points := PackedVector2Array([
-		size * Vector2(0.06, 0.50),
-		size * Vector2(0.16, 0.42),
-		size * Vector2(0.16, 0.58),
-	])
-	var flame_inner_points := PackedVector2Array([
-		size * Vector2(0.11, 0.50),
-		size * Vector2(0.17, 0.45),
-		size * Vector2(0.17, 0.55),
-	])
-	draw_colored_polygon(flame_outer_points, flame_outer)
-	draw_colored_polygon(flame_inner_points, flame_inner)
-
-	var connector_width: float = max(4.0, size.x * 0.018)
-	draw_line(size * Vector2(0.33, 0.50), size * Vector2(0.46, 0.50), outline_color, connector_width, true)
-
-	draw_circle(orb_center, orb_radius, body_color)
-	draw_arc(orb_center, orb_radius * 1.08, -PI * 0.9, PI * 0.9, 40, outline_color, max(4.0, size.x * 0.018), true)
-	draw_arc(orb_center, orb_radius * 0.58, -PI * 0.88, PI * 0.88, 24, Color(1, 1, 1, 0.95), max(2.0, size.x * 0.012), true)
-
-	var sparkle_center: Vector2 = orb_center + size * Vector2(0.14, -0.14)
-	var sparkle_radius: float = orb_radius * 0.25
-	draw_circle(sparkle_center, sparkle_radius * 1.8, Color(0.82, 1.0, 0.9, 0.18))
-	draw_circle(sparkle_center, sparkle_radius, Color(1, 1, 1, 0.95))
-
-func draw_burn_icon() -> void:
-	var glow_color := Color(0.28, 1.0, 0.54, 0.2)
-	var outer_color := Color(0.62, 1.0, 0.72, 0.98)
-	var inner_color := Color(1.0, 1.0, 1.0, 0.96)
-	var core_color := Color(0.15, 0.55, 0.2, 0.16)
-
+func draw_rotate_icon() -> void:
 	var center: Vector2 = size * 0.5
-	var points := PackedVector2Array([
-		size * Vector2(0.50, 0.12),
-		size * Vector2(0.63, 0.39),
-		size * Vector2(0.88, 0.50),
-		size * Vector2(0.63, 0.61),
-		size * Vector2(0.50, 0.88),
-		size * Vector2(0.37, 0.61),
-		size * Vector2(0.12, 0.50),
-		size * Vector2(0.37, 0.39),
+	var radius: float = minf(size.x, size.y) * 0.28
+	var line_width: float = maxf(6.0, size.x * 0.03)
+
+	draw_arc(center, radius, PI * 0.2, PI * 1.35, 28, Color(0.86, 0.92, 1.0, 0.95), line_width, true)
+	draw_arc(center, radius, -PI * 0.15, -PI * 1.25, 28, Color(0.6, 0.78, 1.0, 0.95), line_width, true)
+
+	var arrow_a := PackedVector2Array([
+		center + Vector2(-radius * 0.9, -radius * 0.55),
+		center + Vector2(-radius * 1.45, -radius * 0.78),
+		center + Vector2(-radius * 1.1, -radius * 0.18),
 	])
+	var arrow_b := PackedVector2Array([
+		center + Vector2(radius * 0.85, radius * 0.55),
+		center + Vector2(radius * 1.38, radius * 0.75),
+		center + Vector2(radius * 1.05, radius * 0.16),
+	])
+	draw_colored_polygon(arrow_a, Color.WHITE)
+	draw_colored_polygon(arrow_b, Color.WHITE)
+	draw_circle(center, radius * 0.24, Color(1, 1, 1, 0.8))
 
-	var glow_points := PackedVector2Array()
-	for point in points:
-		glow_points.append(center + (point - center) * 1.12)
-	draw_colored_polygon(glow_points, glow_color)
-	draw_colored_polygon(points, core_color)
+func draw_dash_icon() -> void:
+	var center: Vector2 = size * 0.5
+	var body_radius: float = minf(size.x, size.y) * 0.18
+	var body_center: Vector2 = center + size * Vector2(-0.06, 0.08)
 
-	var outer_width: float = max(7.0, size.x * 0.04)
-	var inner_width: float = max(3.0, size.x * 0.018)
-	for i in points.size():
-		var from: Vector2 = points[i]
-		var to: Vector2 = points[(i + 1) % points.size()]
-		draw_line(from, to, outer_color, outer_width, true)
-		draw_line(from, to, inner_color, inner_width, true)
+	draw_circle(body_center, body_radius, Color(0.84, 0.16, 0.16, 0.98))
+	draw_arc(body_center, body_radius * 1.04, 0.0, TAU, 36, Color.WHITE, max(4.0, size.x * 0.018), true)
+
+	var arm_points := PackedVector2Array([
+		size * Vector2(0.47, 0.56),
+		size * Vector2(0.61, 0.42),
+		size * Vector2(0.79, 0.34),
+		size * Vector2(0.72, 0.53),
+		size * Vector2(0.56, 0.62),
+	])
+	draw_colored_polygon(arm_points, Color.WHITE)
+
+	var tip_points := PackedVector2Array([
+		size * Vector2(0.73, 0.33),
+		size * Vector2(0.94, 0.2),
+		size * Vector2(0.79, 0.55),
+	])
+	draw_colored_polygon(tip_points, Color(0.3, 0.65, 1.0, 1.0))
+
+	var dash_line_width: float = maxf(5.0, size.x * 0.02)
+	draw_line(size * Vector2(0.1, 0.42), size * Vector2(0.28, 0.42), Color(0.6, 0.9, 1.0, 0.9), dash_line_width, true)
+	draw_line(size * Vector2(0.1, 0.58), size * Vector2(0.33, 0.58), Color(0.6, 0.9, 1.0, 0.9), dash_line_width, true)
+	draw_line(size * Vector2(0.16, 0.5), size * Vector2(0.38, 0.5), Color(0.6, 0.9, 1.0, 0.9), dash_line_width, true)
