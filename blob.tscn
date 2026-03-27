@@ -1,0 +1,66 @@
+[gd_scene format=3 uid="uid://dsknol7btrd85"]
+
+[ext_resource type="Script" uid="uid://bqjd5eexhsiwf" path="res://player_(character_body_2d).gd" id="1_mghtv"]
+[ext_resource type="Texture2D" uid="uid://cekqqsg723ljv" path="res://star.png" id="2_yi2vk"]
+[ext_resource type="Script" uid="uid://c18ablfcfic12" path="res://tip_1_(area_2d).gd" id="3_ka6ag"]
+[ext_resource type="Script" uid="uid://kwgghm60fqoq" path="res://tip_2_(area_2d).gd" id="4_htt4o"]
+[ext_resource type="Script" uid="uid://cqamjyj84fj7j" path="res://tip_3_(area_2d).gd" id="5_80vkd"]
+[ext_resource type="Script" uid="uid://bj24rch0dqpgc" path="res://orb_(area_2d).gd" id="6_wjvnt"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_jej6i"]
+radius = 34.20526
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_2vlla"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_k2djj"]
+radius = 24.020824
+
+[node name="Node2D" type="Node2D" unique_id=1076896928]
+
+[node name="Player (CharacterBody2D)" type="CharacterBody2D" parent="." unique_id=158512590]
+script = ExtResource("1_mghtv")
+
+[node name="Sprite2D" type="Sprite2D" parent="Player (CharacterBody2D)" unique_id=720261488]
+texture = ExtResource("2_yi2vk")
+
+[node name="Hurtbox (Area2D)" type="Area2D" parent="Player (CharacterBody2D)" unique_id=875043168]
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="Player (CharacterBody2D)/Hurtbox (Area2D)" unique_id=1223985958]
+polygon = PackedVector2Array(4, -416, 80, -8, 393, 246, 6, 110, -389, 253, -72, -6)
+
+[node name="Tip1 (Area2D)" type="Area2D" parent="Player (CharacterBody2D)" unique_id=1426007729]
+script = ExtResource("3_ka6ag")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player (CharacterBody2D)/Tip1 (Area2D)" unique_id=1967829478]
+position = Vector2(0, -403)
+scale = Vector2(1.5, 1.5)
+shape = SubResource("CircleShape2D_jej6i")
+
+[node name="Tip2 (Area2D)" type="Area2D" parent="Player (CharacterBody2D)" unique_id=1319043087]
+script = ExtResource("4_htt4o")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player (CharacterBody2D)/Tip2 (Area2D)" unique_id=1735009295]
+position = Vector2(379, 241)
+scale = Vector2(5, 5)
+shape = SubResource("CircleShape2D_2vlla")
+
+[node name="Tip3 (Area2D)" type="Area2D" parent="Player (CharacterBody2D)" unique_id=1444637018]
+script = ExtResource("5_80vkd")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player (CharacterBody2D)/Tip3 (Area2D)" unique_id=931593914]
+position = Vector2(-366, 242)
+scale = Vector2(2, 2)
+shape = SubResource("CircleShape2D_k2djj")
+
+[node name="Label" type="Label" parent="Player (CharacterBody2D)" unique_id=135138077]
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="Timer" type="Timer" parent="Player (CharacterBody2D)" unique_id=1318743830]
+
+[node name="Orb (Area2D)" type="Area2D" parent="." unique_id=1302450499]
+script = ExtResource("6_wjvnt")
+
+[node name="Sprite2D" type="Sprite2D" parent="Orb (Area2D)" unique_id=1055058290]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Orb (Area2D)" unique_id=1232190088]

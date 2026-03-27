@@ -1,0 +1,63 @@
+[gd_scene format=3 uid="uid://clu7ef5f7rbet"]
+
+[ext_resource type="Script" uid="uid://bqjd5eexhsiwf" path="res://player_(character_body_2d).gd" id="1_kpjcp"]
+[ext_resource type="Texture2D" uid="uid://cekqqsg723ljv" path="res://star.png" id="2_kne1u"]
+[ext_resource type="Script" uid="uid://cndj8kt5jeqb5" path="res://tip.gd" id="3_kne1u"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_kne1u"]
+radius = 193.01036
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_e80uo"]
+radius = 34.36568
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_tdg3f"]
+radius = 37.48333
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_cxr5p"]
+radius = 8.2
+
+[node name="Player" type="CharacterBody2D" unique_id=2127802730]
+script = ExtResource("1_kpjcp")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=820122379]
+position = Vector2(0, 28)
+shape = SubResource("CircleShape2D_kne1u")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1271242867]
+texture = ExtResource("2_kne1u")
+
+[node name="Hurtbox (Area2D)" type="Area2D" parent="." unique_id=1774226615]
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="Hurtbox (Area2D)" unique_id=790218763]
+polygon = PackedVector2Array(2, -421, 75, -11, 397, 248, 6, 106, -387, 254, -68, -9)
+
+[node name="Tip1" type="Area2D" parent="." unique_id=593983428]
+script = ExtResource("3_kne1u")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Tip1" unique_id=2097921734]
+position = Vector2(-389, 254)
+shape = SubResource("CircleShape2D_e80uo")
+
+[node name="Tip2" type="Area2D" parent="." unique_id=1146409314]
+script = ExtResource("3_kne1u")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Tip2" unique_id=127220314]
+position = Vector2(384, 236)
+shape = SubResource("CircleShape2D_tdg3f")
+
+[node name="Tip3" type="Area2D" parent="." unique_id=2051340302]
+script = ExtResource("3_kne1u")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Tip3" unique_id=1675773953]
+position = Vector2(2.0000005, -407.00003)
+scale = Vector2(5, 5)
+shape = SubResource("CircleShape2D_cxr5p")
+
+[node name="Label" type="Label" parent="." unique_id=1556839900]
+offset_left = -180.0
+offset_top = -360.0
+offset_right = 180.0
+offset_bottom = -240.0
+theme_override_font_sizes/font_size = 54
+horizontal_alignment = 1
+text = "ATK 10\nHP 100"

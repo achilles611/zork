@@ -1,0 +1,207 @@
+[gd_scene format=3 uid="uid://cu0ohfuma0scw"]
+
+[ext_resource type="Script" uid="uid://btsgk5t1u66vj" path="res://main.gd" id="1_ig7tw"]
+[ext_resource type="Script" path="res://mobile_controls.gd" id="2_mobile"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_joystick_base"]
+bg_color = Color(0.08, 0.12, 0.2, 0.3)
+corner_radius_top_left = 112
+corner_radius_top_right = 112
+corner_radius_bottom_right = 112
+corner_radius_bottom_left = 112
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.8, 0.9, 1, 0.45)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_joystick_knob"]
+bg_color = Color(0.75, 0.9, 1, 0.42)
+corner_radius_top_left = 60
+corner_radius_top_right = 60
+corner_radius_bottom_right = 60
+corner_radius_bottom_left = 60
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(1, 1, 1, 0.75)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_burn_normal"]
+bg_color = Color(0.12, 0.45, 0.18, 0.42)
+corner_radius_top_left = 100
+corner_radius_top_right = 100
+corner_radius_bottom_right = 100
+corner_radius_bottom_left = 100
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.5, 1, 0.62, 0.75)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_burn_pressed"]
+bg_color = Color(0.16, 0.6, 0.22, 0.72)
+corner_radius_top_left = 100
+corner_radius_top_right = 100
+corner_radius_bottom_right = 100
+corner_radius_bottom_left = 100
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.8, 1, 0.84, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fire_normal"]
+bg_color = Color(0.18, 0.22, 0.55, 0.45)
+corner_radius_top_left = 110
+corner_radius_top_right = 110
+corner_radius_bottom_right = 110
+corner_radius_bottom_left = 110
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.72, 0.86, 1, 0.78)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fire_pressed"]
+bg_color = Color(0.28, 0.34, 0.78, 0.78)
+corner_radius_top_left = 110
+corner_radius_top_right = 110
+corner_radius_bottom_right = 110
+corner_radius_bottom_left = 110
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.92, 0.96, 1, 1)
+
+[node name="main" type="Node2D" unique_id=929960265]
+script = ExtResource("1_ig7tw")
+
+[node name="Background" type="Node2D" parent="." unique_id=177227002]
+
+[node name="Players" type="Node2D" parent="." unique_id=420614543]
+
+[node name="Orbs" type="Node2D" parent="." unique_id=1731390345]
+
+[node name="Crystals" type="Node2D" parent="." unique_id=197540018]
+
+[node name="Borders" type="Node2D" parent="." unique_id=438811295]
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1872313056]
+zoom = Vector2(0.12, 0.12)
+
+[node name="BorderGlowOuter" type="Line2D" parent="." unique_id=425893712]
+default_color = Color(0.75, 0.9, 1, 0.18)
+width = 140.0
+joint_mode = 1
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="BorderGlowInner" type="Line2D" parent="." unique_id=151774812]
+default_color = Color(0.92, 0.97, 1, 0.42)
+width = 72.0
+joint_mode = 1
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="BorderCore" type="Line2D" parent="." unique_id=196610331]
+default_color = Color(1, 1, 1, 0.98)
+width = 22.0
+joint_mode = 1
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=2056740505]
+
+[node name="ConsolePanel" type="Panel" parent="CanvasLayer" unique_id=74901542]
+visible = false
+offset_left = 32.0
+offset_top = 32.0
+offset_right = 900.0
+offset_bottom = 360.0
+
+[node name="ConsoleLog" type="RichTextLabel" parent="CanvasLayer/ConsolePanel" unique_id=184778411]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 850.0
+offset_bottom = 262.0
+bbcode_enabled = true
+scroll_active = true
+theme_override_colors/default_color = Color(0.55, 1, 0.55, 1)
+theme_override_font_sizes/normal_font_size = 24
+
+[node name="ConsoleInput" type="LineEdit" parent="CanvasLayer/ConsolePanel" unique_id=80990472]
+offset_left = 18.0
+offset_top = 278.0
+offset_right = 850.0
+offset_bottom = 324.0
+theme_override_font_sizes/font_size = 28
+placeholder_text = "Enter admin command..."
+
+[node name="MobileControls" type="Control" parent="CanvasLayer" unique_id=519227444]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("2_mobile")
+
+[node name="JoystickArea" type="Control" parent="CanvasLayer/MobileControls" unique_id=133043979]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 652.0
+offset_right = 328.0
+offset_bottom = 1056.0
+mouse_filter = 1
+
+[node name="JoystickBase" type="Panel" parent="CanvasLayer/MobileControls/JoystickArea" unique_id=1041389333]
+layout_mode = 0
+offset_left = 32.0
+offset_top = 92.0
+offset_right = 256.0
+offset_bottom = 316.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_joystick_base")
+
+[node name="JoystickKnob" type="Panel" parent="CanvasLayer/MobileControls/JoystickArea/JoystickBase" unique_id=1782126514]
+layout_mode = 0
+offset_left = 52.0
+offset_top = 52.0
+offset_right = 172.0
+offset_bottom = 172.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_joystick_knob")
+
+[node name="Buttons" type="Control" parent="CanvasLayer/MobileControls" unique_id=336803231]
+layout_mode = 0
+offset_left = 1548.0
+offset_top = 616.0
+offset_right = 1942.0
+offset_bottom = 1054.0
+mouse_filter = 1
+
+[node name="BurnButton" type="Button" parent="CanvasLayer/MobileControls/Buttons" unique_id=1523492465]
+layout_mode = 0
+offset_left = 162.0
+offset_top = 150.0
+offset_right = 362.0
+offset_bottom = 350.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 34
+theme_override_styles/normal = SubResource("StyleBoxFlat_burn_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_burn_pressed")
+text = "BURN"
+
+[node name="FireButton" type="Button" parent="CanvasLayer/MobileControls/Buttons" unique_id=951597184]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 220.0
+offset_bottom = 220.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 34
+theme_override_styles/normal = SubResource("StyleBoxFlat_fire_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_fire_pressed")
+text = "FIRE"
