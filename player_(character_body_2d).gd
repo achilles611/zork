@@ -8,6 +8,9 @@ const GREEN_SATELLITE_SCENE = preload("res://GreenSatellite.tscn")
 
 const BASE_MODEL_SCALE := 3.35
 const MODEL_REGION_HEIGHT_RATIO := 0.38
+const BODY_OUTLINE_WIDTH := 18.0
+const BODY_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.95)
+const BODY_OUTLINE_POINT_COUNT := 48
 const DAMAGE_NUMBER_OFFSET := Vector2(0, -170)
 const KNOCKBACK_DISTANCE := 240.0
 const FLASH_TIME := 0.12
@@ -139,12 +142,14 @@ var pickup_audio_player: AudioStreamPlayer = null
 
 @onready var label = $Label
 @onready var sprite = $Sprite2D
+@onready var body_collision_shape = $CollisionShape2D
 
 func _ready() -> void:
 	$Tip.owner_player = self
 	apply_growth_scale()
 	label.top_level = true
 	label.add_theme_color_override("font_color", STATS_NORMAL_COLOR)
+	create_body_outline()
 	setup_model_material()
 	setup_visible_tip_model()
 	setup_burn_trail_material()
@@ -523,6 +528,30 @@ func setup_visible_tip_model() -> void:
 	sprite.region_enabled = true
 	sprite.region_rect = Rect2(0.0, 0.0, texture_size.x, region_height)
 	sprite.offset = Vector2(0.0, -((texture_size.y - region_height) * 0.5))
+
+func create_body_outline() -> void:
+	if body_collision_shape == null:
+		return
+
+	var circle_shape := body_collision_shape.shape as CircleShape2D
+	if circle_shape == null:
+		return
+
+	var outline := Line2D.new()
+	outline.name = "BodyOutline"
+	outline.width = BODY_OUTLINE_WIDTH
+	outline.default_color = BODY_OUTLINE_COLOR
+	outline.antialiased = true
+	outline.closed = true
+	outline.z_index = -1
+	outline.position = body_collision_shape.position
+
+	var points := PackedVector2Array()
+	for i in range(BODY_OUTLINE_POINT_COUNT):
+		var angle: float = TAU * float(i) / float(BODY_OUTLINE_POINT_COUNT)
+		points.append(Vector2(cos(angle), sin(angle)) * circle_shape.radius)
+	outline.points = points
+	add_child(outline)
 
 func set_model_tint(color: Color, strength: float) -> void:
 	if sprite_tint_material == null:
