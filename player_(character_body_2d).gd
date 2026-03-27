@@ -140,9 +140,7 @@ var pickup_audio_player: AudioStreamPlayer = null
 @onready var sprite = $Sprite2D
 
 func _ready() -> void:
-	$Tip1.owner_player = self
-	$Tip2.owner_player = self
-	$Tip3.owner_player = self
+	$Tip.owner_player = self
 	apply_growth_scale()
 	label.top_level = true
 	label.add_theme_color_override("font_color", STATS_NORMAL_COLOR)

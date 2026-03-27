@@ -2,7 +2,7 @@ extends Node2D
 
 const GREEN_CRYSTAL_PICKUP_SCENE = preload("res://GreenCrystalPickup.tscn")
 
-const MAX_HP := 100
+const MAX_HP := 50
 const DROP_COUNT := 6
 const HIT_COOLDOWN := 0.25
 const HP_BAR_WIDTH := 220.0
