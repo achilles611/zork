@@ -7,6 +7,7 @@ const GREEN_SATELLITE_SCENE = preload("res://GreenSatellite.tscn")
 @export var player_id: int = 0
 
 const BASE_MODEL_SCALE := 3.35
+const MODEL_REGION_HEIGHT_RATIO := 0.38
 const DAMAGE_NUMBER_OFFSET := Vector2(0, -170)
 const KNOCKBACK_DISTANCE := 240.0
 const FLASH_TIME := 0.12
@@ -145,6 +146,7 @@ func _ready() -> void:
 	label.top_level = true
 	label.add_theme_color_override("font_color", STATS_NORMAL_COLOR)
 	setup_model_material()
+	setup_visible_tip_model()
 	setup_burn_trail_material()
 	setup_burn_audio()
 	setup_damage_audio()
@@ -261,6 +263,20 @@ func resolve_combat(other: Node) -> void:
 	apply_knockback(push_direction_to_self)
 	other.apply_knockback(push_direction_to_other)
 
+func deal_tip_damage(other: Node) -> void:
+	if !alive or other == null or !is_instance_valid(other):
+		return
+	if !other.alive or !can_hit(other):
+		return
+
+	register_hit(other)
+	var push_direction_to_other: Vector2 = (other.global_position - global_position).normalized()
+	if push_direction_to_other == Vector2.ZERO:
+		push_direction_to_other = Vector2.UP
+
+	other.take_damage(attack)
+	other.apply_knockback(push_direction_to_other)
+
 func update_label() -> void:
 	label.text = "ATK %d\nHP %d" % [attack, hp]
 
@@ -275,7 +291,10 @@ func update_label_position() -> void:
 
 	var sprite_height := 0.0
 	if sprite.texture != null:
-		sprite_height = sprite.texture.get_size().y * sprite.scale.y * scale.y
+		var visible_size: Vector2 = sprite.texture.get_size()
+		if sprite.region_enabled:
+			visible_size = sprite.region_rect.size
+		sprite_height = visible_size.y * sprite.scale.y * scale.y
 
 	var label_size: Vector2 = label.size * label.scale
 	var world_offset: Vector2 = Vector2(0, -((sprite_height * 0.5) + (STATS_MARGIN * scale.y)))
@@ -495,6 +514,16 @@ func setup_model_material() -> void:
 	sprite_tint_material.shader = shader
 	sprite.material = sprite_tint_material
 
+func setup_visible_tip_model() -> void:
+	if sprite.texture == null:
+		return
+
+	var texture_size: Vector2 = sprite.texture.get_size()
+	var region_height: float = texture_size.y * MODEL_REGION_HEIGHT_RATIO
+	sprite.region_enabled = true
+	sprite.region_rect = Rect2(0.0, 0.0, texture_size.x, region_height)
+	sprite.offset = Vector2(0.0, -((texture_size.y - region_height) * 0.5))
+
 func set_model_tint(color: Color, strength: float) -> void:
 	if sprite_tint_material == null:
 		return
@@ -613,6 +642,8 @@ func spawn_burn_trail() -> void:
 	trail.top_level = true
 	trail.z_index = sprite.z_index - 1
 	trail.texture = sprite.texture
+	trail.region_enabled = sprite.region_enabled
+	trail.region_rect = sprite.region_rect
 	trail.centered = sprite.centered
 	trail.offset = sprite.offset
 	trail.flip_h = sprite.flip_h

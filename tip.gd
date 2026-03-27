@@ -15,3 +15,7 @@ func _on_area_entered(area: Area2D) -> void:
 
 	if other_player.has_method("hit_by_player"):
 		other_player.hit_by_player(owner_player)
+		return
+
+	if other_player.has_method("take_damage") and other_player.has_method("register_hit") and owner_player.has_method("deal_tip_damage"):
+		owner_player.deal_tip_damage(other_player)
