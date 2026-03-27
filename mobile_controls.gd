@@ -4,6 +4,9 @@ signal fire_requested
 
 const JOYSTICK_RADIUS := 110.0
 const MOUSE_TOUCH_ID := -999
+const JOYSTICK_MARGIN := 24.0
+const BUTTON_GROUP_MARGIN := 24.0
+const BUTTON_GROUP_SIZE := Vector2(394.0, 438.0)
 
 var move_vector: Vector2 = Vector2.ZERO
 var burn_active := false
@@ -17,10 +20,13 @@ var burn_touch_id := -1
 @onready var fire_button = $Buttons/FireButton
 
 func _ready() -> void:
+	set_process_input(true)
+	get_viewport().size_changed.connect(_layout_controls)
 	burn_button.button_down.connect(_on_burn_button_down)
 	burn_button.button_up.connect(_on_burn_button_up)
 	burn_button.mouse_exited.connect(_on_burn_button_mouse_exited)
 	fire_button.pressed.connect(_on_fire_button_pressed)
+	_layout_controls()
 	reset_joystick()
 
 func get_move_vector() -> Vector2:
@@ -45,7 +51,7 @@ func _on_fire_button_pressed() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			if joystick_touch_id == -1 and is_inside_joystick(event.position):
+			if joystick_touch_id == -1 and is_inside_joystick_activation_area(event.position):
 				joystick_touch_id = event.index
 				update_joystick(event.position)
 				get_viewport().set_input_as_handled()
@@ -72,7 +78,7 @@ func _input(event: InputEvent) -> void:
 			burn_active = burn_button.get_global_rect().has_point(event.position)
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed and is_inside_joystick(event.position):
+		if event.pressed and is_inside_joystick_activation_area(event.position):
 			joystick_touch_id = MOUSE_TOUCH_ID
 			update_joystick(event.position)
 		elif !event.pressed and joystick_touch_id == MOUSE_TOUCH_ID:
@@ -80,8 +86,21 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and joystick_touch_id == MOUSE_TOUCH_ID and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		update_joystick(event.position)
 
-func is_inside_joystick(global_position: Vector2) -> bool:
-	return joystick_area.get_global_rect().has_point(global_position) or joystick_base.get_global_rect().has_point(global_position)
+func _layout_controls() -> void:
+	var viewport_size := get_viewport_rect().size
+	joystick_area.position = Vector2(JOYSTICK_MARGIN, viewport_size.y - joystick_area.size.y - JOYSTICK_MARGIN)
+	$Buttons.position = viewport_size - BUTTON_GROUP_SIZE - Vector2(BUTTON_GROUP_MARGIN, BUTTON_GROUP_MARGIN)
+
+func is_inside_joystick_activation_area(global_position: Vector2) -> bool:
+	if joystick_area.get_global_rect().has_point(global_position) or joystick_base.get_global_rect().has_point(global_position):
+		return true
+
+	var viewport_size := get_viewport_rect().size
+	var left_control_zone := Rect2(
+		Vector2(0.0, viewport_size.y * 0.45),
+		Vector2(viewport_size.x * 0.5, viewport_size.y * 0.55)
+	)
+	return left_control_zone.has_point(global_position)
 
 func update_joystick(global_position: Vector2) -> void:
 	var center := get_joystick_center()
