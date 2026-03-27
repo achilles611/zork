@@ -2,11 +2,12 @@ extends Control
 
 signal fire_requested
 
-const JOYSTICK_RADIUS := 110.0
+const JOYSTICK_RADIUS := 128.0
 const MOUSE_TOUCH_ID := -999
-const JOYSTICK_MARGIN := 24.0
-const BUTTON_GROUP_MARGIN := 24.0
-const BUTTON_GROUP_SIZE := Vector2(394.0, 438.0)
+const JOYSTICK_MARGIN := 56.0
+const BUTTON_GROUP_MARGIN_X := 40.0
+const BUTTON_GROUP_MARGIN_Y := 118.0
+const BUTTON_GROUP_SIZE := Vector2(420.0, 500.0)
 
 var move_vector: Vector2 = Vector2.ZERO
 var burn_active := false
@@ -89,7 +90,7 @@ func _input(event: InputEvent) -> void:
 func _layout_controls() -> void:
 	var viewport_size := get_viewport_rect().size
 	joystick_area.position = Vector2(JOYSTICK_MARGIN, viewport_size.y - joystick_area.size.y - JOYSTICK_MARGIN)
-	$Buttons.position = viewport_size - BUTTON_GROUP_SIZE - Vector2(BUTTON_GROUP_MARGIN, BUTTON_GROUP_MARGIN)
+	$Buttons.position = viewport_size - BUTTON_GROUP_SIZE - Vector2(BUTTON_GROUP_MARGIN_X, BUTTON_GROUP_MARGIN_Y)
 
 func is_inside_joystick_activation_area(global_position: Vector2) -> bool:
 	if joystick_area.get_global_rect().has_point(global_position) or joystick_base.get_global_rect().has_point(global_position):

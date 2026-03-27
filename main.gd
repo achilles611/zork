@@ -3,12 +3,15 @@ extends Node2D
 const PLAYER_SCENE = preload("res://Player.tscn")
 const ORB_SCENE = preload("res://orb.tscn")
 const CRYSTAL_CLUSTER_SCENE = preload("res://CrystalCluster.tscn")
-const BORDER_THICKNESS := 120.0
+const BORDER_THICKNESS := 240.0
 const BORDER_INSET := 10.0
-const MAP_SCALE_FACTOR := 3.0
+const MAP_SCALE_FACTOR := 2.7
+const ARENA_RADIUS_FACTOR := 0.44
+const BORDER_SEGMENT_COUNT := 72
 const CAMERA_ZOOM_SMOOTHNESS := 8.0
-const CRYSTAL_CLUSTER_SCALE := 1.4
+const CRYSTAL_CLUSTER_SCALE := 2.05
 const STAR_COUNT := 180
+const NPC_ATTACK_DELAY := 3.0
 const ADMIN_LASER_SOUND_MIX_RATE := 22050.0
 const ADMIN_LASER_SOUND_DURATION := 0.55
 const ADMIN_LASER_SOUND_VOLUME_DB := -4.0
@@ -27,12 +30,21 @@ const ADMIN_LASER_SOUND_VOLUME_DB := -4.0
 @onready var console_log = $CanvasLayer/ConsolePanel/ConsoleLog
 @onready var console_input = $CanvasLayer/ConsolePanel/ConsoleInput
 @onready var mobile_controls = $CanvasLayer/MobileControls
+@onready var round_end_overlay = $CanvasLayer/RoundEndOverlay
+@onready var round_end_title = $CanvasLayer/RoundEndOverlay/RoundEndPanel/RoundEndTitle
+@onready var round_end_subtitle = $CanvasLayer/RoundEndOverlay/RoundEndPanel/RoundEndSubtitle
+@onready var replay_button = $CanvasLayer/RoundEndOverlay/RoundEndPanel/ReplayButton
+@onready var quit_button = $CanvasLayer/RoundEndOverlay/RoundEndPanel/QuitButton
 
 var arena_size: Vector2
+var arena_center: Vector2
+var arena_radius := 0.0
 var base_camera_zoom: Vector2
 var player_one: Node2D = null
 var space_was_pressed := false
 var console_open := false
+var round_over := false
+var npc_attack_delay_remaining := NPC_ATTACK_DELAY
 
 func get_camera_world_size() -> Vector2:
 	var viewport_size = get_viewport_rect().size
@@ -44,10 +56,13 @@ func _ready() -> void:
 
 	base_camera_zoom = camera.zoom
 	arena_size = get_camera_world_size() * MAP_SCALE_FACTOR
-	camera.position = arena_size / 2.0
+	arena_center = arena_size / 2.0
+	arena_radius = min(arena_size.x, arena_size.y) * ARENA_RADIUS_FACTOR
+	camera.position = arena_center
 	camera.enabled = true
 
 	print("Arena size: ", arena_size)
+	print("Arena radius: ", arena_radius)
 	print("Camera position: ", camera.position)
 	print("Camera zoom: ", camera.zoom)
 
@@ -59,7 +74,9 @@ func _ready() -> void:
 	spawn_orbs()
 	setup_console()
 	setup_mobile_controls()
+	setup_round_end_overlay()
 	update_camera()
+	npc_attack_delay_remaining = NPC_ATTACK_DELAY
 
 	print("Total players spawned: ", players_node.get_child_count())
 	print("Total orbs spawned: ", orbs_node.get_child_count())
@@ -69,12 +86,11 @@ func spawn_players() -> void:
 		print("spawn_players skipped: players already exist")
 		return
 
-	var horizontal_margin := 300.0
-	var center_y := arena_size.y / 2.0
+	var horizontal_offset := arena_radius * 0.72
 
 	var positions = [
-		Vector2(horizontal_margin, center_y),
-		Vector2(arena_size.x - horizontal_margin, center_y)
+		arena_center + Vector2(-horizontal_offset, 0),
+		arena_center + Vector2(horizontal_offset, 0)
 	]
 
 	print("Spawning players...")
@@ -99,14 +115,9 @@ func spawn_orbs() -> void:
 	spawn_orb_batch(50, 2)  # red
 
 func spawn_orb_batch(count: int, orb_type: int) -> void:
-	var margin := 100.0
-
 	for i in range(count):
 		var orb = ORB_SCENE.instantiate()
-		orb.position = Vector2(
-			randf_range(margin, arena_size.x - margin),
-			randf_range(margin, arena_size.y - margin)
-		)
+		orb.position = random_point_in_arena(180.0)
 		orb.orb_type = orb_type
 		orbs_node.add_child(orb)
 
@@ -116,16 +127,15 @@ func spawn_crystal_clusters() -> void:
 	if crystals_node.get_child_count() > 0:
 		return
 
-	var players = players_node.get_children()
-	var offsets = [
-		Vector2(1800, -150),
-		Vector2(-1800, -150)
+	var positions = [
+		arena_center + Vector2(-arena_radius * 0.46, -arena_radius * 0.1),
+		arena_center + Vector2(arena_radius * 0.46, -arena_radius * 0.1)
 	]
 
-	var cluster_count: int = mini(players.size(), offsets.size())
+	var cluster_count: int = mini(players_node.get_child_count(), positions.size())
 	for i in range(cluster_count):
 		var cluster = CRYSTAL_CLUSTER_SCENE.instantiate()
-		cluster.position = players[i].position + offsets[i]
+		cluster.position = positions[i]
 		cluster.scale = Vector2.ONE * CRYSTAL_CLUSTER_SCALE
 		crystals_node.add_child(cluster)
 
@@ -134,12 +144,8 @@ func setup_background() -> void:
 		child.queue_free()
 
 	var backdrop := Polygon2D.new()
-	backdrop.polygon = PackedVector2Array([
-		Vector2.ZERO,
-		Vector2(arena_size.x, 0),
-		Vector2(arena_size.x, arena_size.y),
-		Vector2(0, arena_size.y)
-	])
+	backdrop.polygon = make_circle_points(arena_radius, 96)
+	backdrop.position = arena_center
 	backdrop.color = Color(0.01, 0.01, 0.03, 1.0)
 	background_node.add_child(backdrop)
 
@@ -150,10 +156,7 @@ func setup_background() -> void:
 		var star := Polygon2D.new()
 		var star_radius: float = rng.randf_range(3.0, 11.0)
 		star.polygon = make_circle_points(star_radius, 10)
-		star.position = Vector2(
-			rng.randf_range(120.0, arena_size.x - 120.0),
-			rng.randf_range(120.0, arena_size.y - 120.0)
-		)
+		star.position = random_point_in_arena(140.0)
 
 		if rng.randf() < 0.28:
 			star.color = Color(0.55, 0.72, 1.0, rng.randf_range(0.65, 0.95))
@@ -187,42 +190,50 @@ func setup_arena_border() -> void:
 	for child in borders_node.get_children():
 		child.queue_free()
 
-	var half_thickness := BORDER_THICKNESS / 2.0
-	var top_size := Vector2(arena_size.x + BORDER_THICKNESS, BORDER_THICKNESS)
-	var side_size := Vector2(BORDER_THICKNESS, arena_size.y + BORDER_THICKNESS)
+	var border_points := PackedVector2Array()
+	var ring_radius := arena_radius - BORDER_INSET
+	for i in range(BORDER_SEGMENT_COUNT + 1):
+		var angle: float = TAU * float(i) / float(BORDER_SEGMENT_COUNT)
+		border_points.append(arena_center + Vector2(cos(angle), sin(angle)) * ring_radius)
 
-	create_border("TopBorder", Vector2(arena_size.x / 2.0, -half_thickness), top_size)
-	create_border("BottomBorder", Vector2(arena_size.x / 2.0, arena_size.y + half_thickness), top_size)
-	create_border("LeftBorder", Vector2(-half_thickness, arena_size.y / 2.0), side_size)
-	create_border("RightBorder", Vector2(arena_size.x + half_thickness, arena_size.y / 2.0), side_size)
-
-	var border_points := PackedVector2Array([
-		Vector2(BORDER_INSET, BORDER_INSET),
-		Vector2(arena_size.x - BORDER_INSET, BORDER_INSET),
-		Vector2(arena_size.x - BORDER_INSET, arena_size.y - BORDER_INSET),
-		Vector2(BORDER_INSET, arena_size.y - BORDER_INSET),
-		Vector2(BORDER_INSET, BORDER_INSET)
-	])
+	for i in range(BORDER_SEGMENT_COUNT):
+		create_border_segment(border_points[i], border_points[i + 1], i)
 
 	border_glow_outer.points = border_points
 	border_glow_inner.points = border_points
 	border_core.points = border_points
 
-func create_border(border_name: String, position: Vector2, size: Vector2) -> void:
+func create_border_segment(from_point: Vector2, to_point: Vector2, index: int) -> void:
 	var body := StaticBody2D.new()
-	body.name = border_name
-	body.position = position
+	body.name = "BorderSegment%d" % index
+	body.position = (from_point + to_point) * 0.5
+	body.rotation = (to_point - from_point).angle()
 
 	var shape := CollisionShape2D.new()
 	var rectangle := RectangleShape2D.new()
-	rectangle.size = size
+	rectangle.size = Vector2(from_point.distance_to(to_point) + BORDER_THICKNESS, BORDER_THICKNESS)
 	shape.shape = rectangle
 
 	body.add_child(shape)
 	borders_node.add_child(body)
 
+func random_point_in_arena(margin: float = 0.0) -> Vector2:
+	var usable_radius: float = maxf(arena_radius - margin, 0.0)
+	var angle: float = randf() * TAU
+	var distance: float = sqrt(randf()) * usable_radius
+	return arena_center + Vector2(cos(angle), sin(angle)) * distance
+
+func get_arena_center() -> Vector2:
+	return arena_center
+
+func get_arena_radius() -> float:
+	return arena_radius
+
 func _process(delta: float) -> void:
+	if npc_attack_delay_remaining > 0.0 and !round_over:
+		npc_attack_delay_remaining = maxf(npc_attack_delay_remaining - delta, 0.0)
 	handle_input()
+	check_round_end()
 	update_camera(delta)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -241,17 +252,28 @@ func update_camera(delta: float = 1.0) -> void:
 		return
 
 	camera.global_position = player_one.global_position
-	var target_zoom: Vector2 = base_camera_zoom / max(player_one.scale.x, 1.0)
+	var zoom_factor := 1.0
+	if player_one.has_method("get_camera_zoom_factor"):
+		zoom_factor = float(player_one.call("get_camera_zoom_factor"))
+	var target_zoom: Vector2 = base_camera_zoom / max(zoom_factor, 1.0)
 	var weight: float = clampf(delta * CAMERA_ZOOM_SMOOTHNESS, 0.0, 1.0)
 	camera.zoom = camera.zoom.lerp(target_zoom, weight)
 
 func setup_camera_limits() -> void:
-	camera.limit_left = 0
-	camera.limit_top = 0
-	camera.limit_right = int(arena_size.x)
-	camera.limit_bottom = int(arena_size.y)
+	camera.limit_left = int(arena_center.x - arena_radius)
+	camera.limit_top = int(arena_center.y - arena_radius)
+	camera.limit_right = int(arena_center.x + arena_radius)
+	camera.limit_bottom = int(arena_center.y + arena_radius)
 
 func handle_input() -> void:
+	if round_over:
+		for player in players_node.get_children():
+			if is_instance_valid(player):
+				player.set_input(Vector2.ZERO)
+				player.set_burning(false)
+		space_was_pressed = false
+		return
+
 	if console_open:
 		if player_one != null and is_instance_valid(player_one):
 			player_one.set_input(Vector2.ZERO)
@@ -281,6 +303,8 @@ func handle_input() -> void:
 func get_npc_input(npc: Node2D) -> Vector2:
 	if player_one == null or !is_instance_valid(player_one):
 		return Vector2.ZERO
+	if npc_attack_delay_remaining > 0.0:
+		return Vector2.ZERO
 
 	return (player_one.global_position - npc.global_position).normalized()
 
@@ -297,16 +321,68 @@ func setup_mobile_controls() -> void:
 	mobile_controls.visible = should_show_mobile_controls()
 	mobile_controls.fire_requested.connect(_on_mobile_fire_requested)
 
+func setup_round_end_overlay() -> void:
+	round_end_overlay.visible = false
+	round_end_overlay.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	replay_button.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	quit_button.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	replay_button.pressed.connect(_on_replay_pressed)
+	quit_button.pressed.connect(_on_quit_pressed)
+
 func should_show_mobile_controls() -> bool:
 	return OS.has_feature("android") or OS.has_feature("ios") or DisplayServer.is_touchscreen_available()
 
 func _on_mobile_fire_requested() -> void:
-	if console_open:
+	if console_open or round_over:
 		return
 
 	var players = players_node.get_children()
 	if players.size() > 0 and is_instance_valid(players[0]):
 		players[0].fire_green_satellites(players)
+
+func check_round_end() -> void:
+	if round_over:
+		return
+
+	var surviving_players: Array[Node2D] = []
+	for candidate in players_node.get_children():
+		var node := candidate as Node2D
+		if node != null and is_instance_valid(node):
+			surviving_players.append(node)
+
+	if surviving_players.size() <= 1:
+		var winner: Node2D = surviving_players[0] if surviving_players.size() == 1 else null
+		end_round(winner)
+
+func end_round(winner: Node2D) -> void:
+	round_over = true
+	console_open = false
+	console_panel.visible = false
+	if mobile_controls != null:
+		mobile_controls.visible = false
+
+	for player in players_node.get_children():
+		if is_instance_valid(player):
+			player.set_input(Vector2.ZERO)
+			player.set_burning(false)
+
+	if winner != null and is_instance_valid(winner):
+		round_end_title.text = "Player %d Wins" % int(winner.get("player_id"))
+		round_end_subtitle.text = "Only one fighter remains."
+	else:
+		round_end_title.text = "Round Over"
+		round_end_subtitle.text = "No players survived."
+
+	round_end_overlay.visible = true
+	get_tree().paused = true
+
+func _on_replay_pressed() -> void:
+	get_tree().paused = false
+	get_tree().reload_current_scene()
+
+func _on_quit_pressed() -> void:
+	get_tree().paused = false
+	get_tree().quit()
 
 func toggle_console(force_open: Variant = null) -> void:
 	if force_open == null:

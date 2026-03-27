@@ -8,6 +8,11 @@ radius = 170.0
 [node name="CrystalCluster" type="Node2D"]
 script = ExtResource("1_cluster")
 
+[node name="SolidBody" type="StaticBody2D" parent="."]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="SolidBody"]
+shape = SubResource("CircleShape2D_cluster")
+
 [node name="Hurtbox" type="Area2D" parent="."]
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]

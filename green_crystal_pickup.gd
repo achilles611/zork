@@ -1,9 +1,5 @@
 extends Area2D
 
-const PICKUP_SOUND_MIX_RATE := 22050.0
-const PICKUP_SOUND_DURATION := 0.32
-const PICKUP_SOUND_VOLUME_DB := -11.0
-
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	create_visuals()
@@ -15,7 +11,8 @@ func _on_body_entered(body: Node) -> void:
 	if body.has_method("add_green_satellite"):
 		var added: bool = bool(body.call("add_green_satellite"))
 		if added:
-			play_pickup_chime()
+			if body.has_method("play_green_pickup_sound"):
+				body.call("play_green_pickup_sound")
 			queue_free()
 
 func create_visuals() -> void:
@@ -57,38 +54,3 @@ func make_circle_points(radius: float, point_count: int) -> PackedVector2Array:
 		var angle: float = TAU * float(i) / float(point_count)
 		points.append(Vector2(cos(angle), sin(angle)) * radius)
 	return points
-
-func play_pickup_chime() -> void:
-	if get_tree().current_scene == null:
-		return
-
-	var player := AudioStreamPlayer2D.new()
-	player.top_level = true
-	player.global_position = global_position
-	player.max_distance = 100000.0
-	player.volume_db = PICKUP_SOUND_VOLUME_DB
-
-	var stream := AudioStreamGenerator.new()
-	stream.mix_rate = PICKUP_SOUND_MIX_RATE
-	stream.buffer_length = PICKUP_SOUND_DURATION
-	player.stream = stream
-	get_tree().current_scene.add_child(player)
-	player.play()
-
-	var playback := player.get_stream_playback() as AudioStreamGeneratorPlayback
-	if playback == null:
-		player.queue_free()
-		return
-
-	var frame_count: int = int(PICKUP_SOUND_MIX_RATE * PICKUP_SOUND_DURATION)
-	for i in range(frame_count):
-		var t: float = float(i) / PICKUP_SOUND_MIX_RATE
-		var decay: float = exp(-7.0 * t)
-		var tone_a: float = sin(TAU * 880.0 * t) * 0.22 * decay
-		var tone_b: float = sin(TAU * 1320.0 * t) * 0.15 * decay
-		var tone_c: float = sin(TAU * 1760.0 * t) * 0.08 * decay
-		var sample: float = tone_a + tone_b + tone_c
-		playback.push_frame(Vector2(sample, sample))
-
-	var timer := get_tree().create_timer(PICKUP_SOUND_DURATION + 0.03)
-	timer.timeout.connect(player.queue_free)

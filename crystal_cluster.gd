@@ -9,19 +9,24 @@ const HP_BAR_WIDTH := 220.0
 const HP_BAR_OFFSET := Vector2(0, -270)
 const HIT_SOUND_MIX_RATE := 22050.0
 const HIT_SOUND_DURATION := 0.18
-const HIT_SOUND_VOLUME_DB := -9.0
+const HIT_SOUND_VOLUME_DB := -5.0
+const SHATTER_SOUND_MIX_RATE := 22050.0
+const SHATTER_SOUND_DURATION := 0.42
+const SHATTER_SOUND_VOLUME_DB := -2.0
 
 var hp: int = MAX_HP
 var attacker_cooldowns := {}
 var hp_bar_root: Node2D = null
 var hp_bar_fill: Line2D = null
-var crystal_hit_audio_player: AudioStreamPlayer2D = null
-var crystal_hit_playback: AudioStreamGeneratorPlayback = null
+var crystal_hit_audio_player: AudioStreamPlayer = null
+var crystal_shatter_audio_player: AudioStreamPlayer = null
+var shattered := false
 
 func _ready() -> void:
 	create_visuals()
 	create_hp_bar()
 	setup_hit_audio()
+	setup_shatter_audio()
 	update_hp_bar_visual()
 	update_hp_bar_position()
 
@@ -30,7 +35,7 @@ func _process(delta: float) -> void:
 	update_hp_bar_position()
 
 func hit_by_player(player: Node2D) -> void:
-	if hp <= 0 or attacker_cooldowns.has(player):
+	if shattered or hp <= 0 or attacker_cooldowns.has(player):
 		return
 
 	attacker_cooldowns[player] = HIT_COOLDOWN
@@ -48,14 +53,31 @@ func hit_by_player(player: Node2D) -> void:
 		shatter()
 
 func shatter() -> void:
+	if shattered:
+		return
+
+	shattered = true
+	$SolidBody/CollisionShape2D.disabled = true
+	$Hurtbox.monitoring = false
+	$Hurtbox.monitorable = false
+	$Hurtbox/CollisionShape2D.disabled = true
+	if hp_bar_root != null:
+		hp_bar_root.visible = false
+
+	for child in get_children():
+		if child is CanvasItem and child != hp_bar_root and child != crystal_hit_audio_player and child != crystal_shatter_audio_player:
+			child.visible = false
+
 	if get_tree().current_scene != null:
+		play_shatter_sound()
 		for i in range(DROP_COUNT):
 			var pickup: Node2D = GREEN_CRYSTAL_PICKUP_SCENE.instantiate()
 			var angle: float = TAU * float(i) / float(DROP_COUNT)
 			pickup.global_position = global_position + Vector2(150, 0).rotated(angle) + Vector2(randf_range(-35.0, 35.0), randf_range(-35.0, 35.0))
 			get_tree().current_scene.add_child(pickup)
 
-	queue_free()
+	var timer := get_tree().create_timer(SHATTER_SOUND_DURATION + 0.05)
+	timer.timeout.connect(queue_free)
 
 func update_attacker_cooldowns(delta: float) -> void:
 	for attacker in attacker_cooldowns.keys():
@@ -163,41 +185,63 @@ func bounce_player(player: Node2D) -> void:
 	player.call("apply_knockback", direction)
 
 func setup_hit_audio() -> void:
-	crystal_hit_audio_player = AudioStreamPlayer2D.new()
-	crystal_hit_audio_player.top_level = true
-	crystal_hit_audio_player.max_distance = 100000.0
-	crystal_hit_audio_player.volume_db = HIT_SOUND_VOLUME_DB
-
-	var stream := AudioStreamGenerator.new()
-	stream.mix_rate = HIT_SOUND_MIX_RATE
-	stream.buffer_length = HIT_SOUND_DURATION
-	crystal_hit_audio_player.stream = stream
+	crystal_hit_audio_player = AudioStreamPlayer.new()
+	crystal_hit_audio_player.volume_db = HIT_SOUND_VOLUME_DB + 3.0
+	crystal_hit_audio_player.max_polyphony = 6
+	crystal_hit_audio_player.stream = build_hit_stream()
 	add_child(crystal_hit_audio_player)
+
+func setup_shatter_audio() -> void:
+	crystal_shatter_audio_player = AudioStreamPlayer.new()
+	crystal_shatter_audio_player.volume_db = SHATTER_SOUND_VOLUME_DB + 3.0
+	crystal_shatter_audio_player.stream = build_shatter_stream()
+	add_child(crystal_shatter_audio_player)
 
 func play_crystal_hit_sound() -> void:
 	if crystal_hit_audio_player == null:
 		return
 
-	crystal_hit_audio_player.global_position = global_position
 	crystal_hit_audio_player.play()
-	crystal_hit_playback = crystal_hit_audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
-	if crystal_hit_playback == null:
+
+func play_shatter_sound() -> void:
+	if crystal_shatter_audio_player == null:
 		return
 
+	crystal_shatter_audio_player.play()
+
+func build_hit_stream() -> AudioStreamWAV:
 	var frame_count: int = int(HIT_SOUND_MIX_RATE * HIT_SOUND_DURATION)
+	var buffer := StreamPeerBuffer.new()
+	buffer.big_endian = false
 	for i in range(frame_count):
 		var t: float = float(i) / HIT_SOUND_MIX_RATE
 		var decay: float = max(1.0 - (t / HIT_SOUND_DURATION), 0.0)
 		var metallic: float = sin(TAU * 1700.0 * t) * 0.18 * decay
 		var body: float = sin(TAU * 520.0 * t) * 0.1 * decay
 		var grit: float = (randf() * 2.0 - 1.0) * 0.12 * decay
-		var sample: float = metallic + body + grit
-		crystal_hit_playback.push_frame(Vector2(sample, sample))
+		var sample: float = clampf(metallic + body + grit, -1.0, 1.0)
+		buffer.put_16(int(round(sample * 32767.0)))
+	return make_wav_stream(buffer, HIT_SOUND_MIX_RATE)
 
-	var timer := get_tree().create_timer(HIT_SOUND_DURATION + 0.02)
-	timer.timeout.connect(_stop_crystal_hit_sound)
+func build_shatter_stream() -> AudioStreamWAV:
+	var frame_count: int = int(SHATTER_SOUND_MIX_RATE * SHATTER_SOUND_DURATION)
+	var buffer := StreamPeerBuffer.new()
+	buffer.big_endian = false
+	for i in range(frame_count):
+		var t: float = float(i) / SHATTER_SOUND_MIX_RATE
+		var decay: float = exp(-5.2 * t)
+		var low_sweep: float = 165.0 - (75.0 * (t / SHATTER_SOUND_DURATION))
+		var berrr: float = sin(TAU * low_sweep * t) * 0.26 * decay
+		var crunch: float = sin(TAU * 82.0 * t) * 0.14 * decay
+		var shards: float = (randf() * 2.0 - 1.0) * 0.1 * decay
+		var sample: float = clampf(berrr + crunch + shards, -1.0, 1.0)
+		buffer.put_16(int(round(sample * 32767.0)))
+	return make_wav_stream(buffer, SHATTER_SOUND_MIX_RATE)
 
-func _stop_crystal_hit_sound() -> void:
-	if crystal_hit_audio_player != null:
-		crystal_hit_audio_player.stop()
-	crystal_hit_playback = null
+func make_wav_stream(buffer: StreamPeerBuffer, mix_rate: float) -> AudioStreamWAV:
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = int(mix_rate)
+	stream.stereo = false
+	stream.data = buffer.data_array
+	return stream

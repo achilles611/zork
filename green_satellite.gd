@@ -1,10 +1,10 @@
 extends Area2D
 
 const DAMAGE := 10
-const ORBIT_RADIUS := 560.0
+const ORBIT_RADIUS := 1400.0
 const ORBIT_SPEED := 2.8
 const PROJECTILE_SPEED := 5200.0
-const PROJECTILE_HIT_RADIUS := 120.0
+const PROJECTILE_HIT_RADIUS := 480.0
 
 var owner_player: Node2D = null
 var consumed := false
@@ -89,22 +89,22 @@ func check_projectile_hit() -> void:
 
 func create_visuals() -> void:
 	var aura := Polygon2D.new()
-	aura.polygon = make_circle_points(34.0, 18)
+	aura.polygon = make_circle_points(208.0, 28)
 	aura.color = Color(0.35, 1.0, 0.35, 0.2)
 	add_child(aura)
 
 	var orb := Polygon2D.new()
-	orb.polygon = make_circle_points(20.0, 16)
+	orb.polygon = make_circle_points(120.0, 24)
 	orb.color = Color(0.45, 1.0, 0.55, 0.95)
 	add_child(orb)
 
 	var gem := Polygon2D.new()
 	gem.polygon = PackedVector2Array([
-		Vector2(0, -18),
-		Vector2(12, -4),
-		Vector2(8, 16),
-		Vector2(-8, 16),
-		Vector2(-12, -4)
+		Vector2(0, -112),
+		Vector2(72, -24),
+		Vector2(48, 96),
+		Vector2(-48, 96),
+		Vector2(-72, -24)
 	])
 	gem.color = Color(0.85, 1.0, 0.9, 0.95)
 	add_child(gem)

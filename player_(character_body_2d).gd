@@ -2,10 +2,11 @@ extends CharacterBody2D
 
 const GREEN_SATELLITE_SCENE = preload("res://GreenSatellite.tscn")
 
-@export var move_speed: float = 1100.0
+@export var move_speed: float = 1450.0
 @export var rotation_speed: float = 2.0
 @export var player_id: int = 0
 
+const BASE_MODEL_SCALE := 3.35
 const DAMAGE_NUMBER_OFFSET := Vector2(0, -170)
 const KNOCKBACK_DISTANCE := 240.0
 const FLASH_TIME := 0.12
@@ -23,12 +24,15 @@ const DAMAGE_SOUND_VOLUME_DB := -7.0
 const STATS_DAMAGE_FLASH_TIME := 0.28
 const STATS_NORMAL_COLOR := Color.WHITE
 const STATS_DAMAGE_COLOR := Color(1.0, 0.2, 0.2)
-const STATS_MARGIN := 80.0
+const STATS_MARGIN := 110.0
 const MAX_GREEN_SATELLITES := 8
 const SATELLITE_VOLLEY_INTERVAL := 0.1
 const SATELLITE_FIRE_SOUND_MIX_RATE := 22050.0
 const SATELLITE_FIRE_SOUND_DURATION := 0.14
-const SATELLITE_FIRE_SOUND_VOLUME_DB := -9.0
+const SATELLITE_FIRE_SOUND_VOLUME_DB := -5.0
+const PICKUP_SOUND_MIX_RATE := 22050.0
+const PICKUP_SOUND_DURATION := 0.32
+const PICKUP_SOUND_VOLUME_DB := -5.0
 const MODEL_NORMAL_COLOR := Color.WHITE
 const MODEL_BURN_COLOR := Color(0.35, 1.0, 0.35)
 const MODEL_DAMAGE_COLOR := Color(1.0, 0.25, 0.25)
@@ -129,6 +133,8 @@ var burn_audio_phase := 0.0
 var burn_audio_noise_phase := 0.0
 var damage_audio_player: AudioStreamPlayer2D = null
 var damage_audio_playback: AudioStreamGeneratorPlayback = null
+var satellite_fire_audio_player: AudioStreamPlayer = null
+var pickup_audio_player: AudioStreamPlayer = null
 
 @onready var label = $Label
 @onready var sprite = $Sprite2D
@@ -137,12 +143,15 @@ func _ready() -> void:
 	$Tip1.owner_player = self
 	$Tip2.owner_player = self
 	$Tip3.owner_player = self
+	apply_growth_scale()
 	label.top_level = true
 	label.add_theme_color_override("font_color", STATS_NORMAL_COLOR)
 	setup_model_material()
 	setup_burn_trail_material()
 	setup_burn_audio()
 	setup_damage_audio()
+	setup_satellite_fire_audio()
+	setup_pickup_audio()
 	update_model_visual()
 	update_label_position()
 	update_label()
@@ -376,6 +385,9 @@ func get_green_satellite_index(satellite: Node) -> int:
 func get_attack_power() -> int:
 	return attack
 
+func get_camera_zoom_factor() -> float:
+	return max(scale.x / BASE_MODEL_SCALE, 1.0)
+
 func fire_green_satellites(players: Array) -> void:
 	cleanup_green_satellites()
 	if green_satellites.is_empty() or !pending_satellite_volley.is_empty():
@@ -456,7 +468,7 @@ func apply_burn_tick() -> void:
 
 func apply_growth_scale() -> void:
 	var growth_scale: float = pow(ORB_GROWTH_FACTOR, float(growth_steps))
-	scale = Vector2.ONE * growth_scale
+	scale = Vector2.ONE * (BASE_MODEL_SCALE * growth_scale)
 
 func kill_instantly() -> void:
 	if !alive:
@@ -620,36 +632,64 @@ func spawn_burn_trail() -> void:
 	tween.tween_callback(trail.queue_free)
 
 func play_satellite_fire_sound() -> void:
-	if get_tree().current_scene == null:
+	if satellite_fire_audio_player == null:
 		return
 
-	var player := AudioStreamPlayer2D.new()
-	player.top_level = true
-	player.global_position = global_position
-	player.max_distance = 100000.0
-	player.volume_db = SATELLITE_FIRE_SOUND_VOLUME_DB
+	satellite_fire_audio_player.play()
 
-	var stream := AudioStreamGenerator.new()
-	stream.mix_rate = SATELLITE_FIRE_SOUND_MIX_RATE
-	stream.buffer_length = SATELLITE_FIRE_SOUND_DURATION
-	player.stream = stream
-	get_tree().current_scene.add_child(player)
-	player.play()
 
-	var playback := player.get_stream_playback() as AudioStreamGeneratorPlayback
-	if playback == null:
-		player.queue_free()
+func play_green_pickup_sound() -> void:
+	if pickup_audio_player == null:
 		return
 
+	pickup_audio_player.play()
+
+func setup_satellite_fire_audio() -> void:
+	satellite_fire_audio_player = AudioStreamPlayer.new()
+	satellite_fire_audio_player.volume_db = SATELLITE_FIRE_SOUND_VOLUME_DB + 3.0
+	satellite_fire_audio_player.max_polyphony = 8
+	satellite_fire_audio_player.stream = build_satellite_fire_stream()
+	add_child(satellite_fire_audio_player)
+
+func setup_pickup_audio() -> void:
+	pickup_audio_player = AudioStreamPlayer.new()
+	pickup_audio_player.volume_db = PICKUP_SOUND_VOLUME_DB + 2.0
+	pickup_audio_player.max_polyphony = 4
+	pickup_audio_player.stream = build_pickup_stream()
+	add_child(pickup_audio_player)
+
+func build_satellite_fire_stream() -> AudioStreamWAV:
 	var frame_count: int = int(SATELLITE_FIRE_SOUND_MIX_RATE * SATELLITE_FIRE_SOUND_DURATION)
+	var buffer := StreamPeerBuffer.new()
+	buffer.big_endian = false
 	for i in range(frame_count):
 		var t: float = float(i) / SATELLITE_FIRE_SOUND_MIX_RATE
 		var decay: float = exp(-12.0 * t)
-		var sweep := 1400.0 - (900.0 * (t / SATELLITE_FIRE_SOUND_DURATION))
+		var sweep: float = 1400.0 - (900.0 * (t / SATELLITE_FIRE_SOUND_DURATION))
 		var core: float = sin(TAU * sweep * t) * 0.24 * decay
 		var sparkle: float = sin(TAU * (sweep * 1.8) * t) * 0.08 * decay
-		var sample: float = core + sparkle
-		playback.push_frame(Vector2(sample, sample))
+		var sample: float = clampf(core + sparkle, -1.0, 1.0)
+		buffer.put_16(int(round(sample * 32767.0)))
+	return make_wav_stream(buffer, SATELLITE_FIRE_SOUND_MIX_RATE)
 
-	var timer := get_tree().create_timer(SATELLITE_FIRE_SOUND_DURATION + 0.03)
-	timer.timeout.connect(player.queue_free)
+func build_pickup_stream() -> AudioStreamWAV:
+	var frame_count: int = int(PICKUP_SOUND_MIX_RATE * PICKUP_SOUND_DURATION)
+	var buffer := StreamPeerBuffer.new()
+	buffer.big_endian = false
+	for i in range(frame_count):
+		var t: float = float(i) / PICKUP_SOUND_MIX_RATE
+		var decay: float = exp(-7.0 * t)
+		var tone_a: float = sin(TAU * 880.0 * t) * 0.22 * decay
+		var tone_b: float = sin(TAU * 1320.0 * t) * 0.15 * decay
+		var tone_c: float = sin(TAU * 1760.0 * t) * 0.08 * decay
+		var sample: float = clampf(tone_a + tone_b + tone_c, -1.0, 1.0)
+		buffer.put_16(int(round(sample * 32767.0)))
+	return make_wav_stream(buffer, PICKUP_SOUND_MIX_RATE)
+
+func make_wav_stream(buffer: StreamPeerBuffer, mix_rate: float) -> AudioStreamWAV:
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = int(mix_rate)
+	stream.stereo = false
+	stream.data = buffer.data_array
+	return stream

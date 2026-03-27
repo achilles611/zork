@@ -1,3 +1,7 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+zork-local-https.cer
+zork-local-https.pfx
+zork-local-https.password.txt
+/build/web/*.import
