@@ -87,6 +87,10 @@ script = ExtResource("1_ig7tw")
 
 [node name="Crystals" type="Node2D" parent="." unique_id=197540018]
 
+[node name="Structures" type="Node2D" parent="."]
+
+[node name="Minions" type="Node2D" parent="."]
+
 [node name="Borders" type="Node2D" parent="." unique_id=438811295]
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1872313056]
@@ -208,7 +212,180 @@ offset_top = 698.0
 offset_right = 1170.0
 offset_bottom = 850.0
 theme_override_font_sizes/font_size = 64
+text = "Return To Lobby"
+
+[node name="TitleScreen" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+
+[node name="Backdrop" type="ColorRect" parent="CanvasLayer/TitleScreen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.82)
+
+[node name="Content" type="CenterContainer" parent="CanvasLayer/TitleScreen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/TitleScreen/Content"]
+layout_mode = 2
+theme_override_constants/separation = 24
+alignment = 1
+
+[node name="TitleSplash" type="TextureRect" parent="CanvasLayer/TitleScreen/Content/VBox"]
+custom_minimum_size = Vector2(980, 420)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="MenuButtons" type="VBoxContainer" parent="CanvasLayer/TitleScreen/Content/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="QuickPlayButton" type="Button" parent="CanvasLayer/TitleScreen/Content/VBox/MenuButtons"]
+custom_minimum_size = Vector2(420, 92)
+layout_mode = 2
+theme_override_font_sizes/font_size = 42
+text = "Quick Fight"
+
+[node name="OpenLobbyButton" type="Button" parent="CanvasLayer/TitleScreen/Content/VBox/MenuButtons"]
+custom_minimum_size = Vector2(420, 92)
+layout_mode = 2
+theme_override_font_sizes/font_size = 42
+text = "Lobby"
+
+[node name="QuitTitleButton" type="Button" parent="CanvasLayer/TitleScreen/Content/VBox/MenuButtons"]
+custom_minimum_size = Vector2(420, 92)
+layout_mode = 2
+theme_override_font_sizes/font_size = 42
 text = "Quit"
+
+[node name="HintLabel" type="Label" parent="CanvasLayer/TitleScreen/Content/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 0.85)
+theme_override_font_sizes/font_size = 26
+text = "Build your lobby, name your slot, and launch the round."
+
+[node name="LobbyScreen" type="Control" parent="CanvasLayer"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+
+[node name="Backdrop" type="ColorRect" parent="CanvasLayer/LobbyScreen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.76)
+
+[node name="LobbyPanel" type="Panel" parent="CanvasLayer/LobbyScreen"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -820.0
+offset_top = -470.0
+offset_right = 820.0
+offset_bottom = 470.0
+
+[node name="LobbyVBox" type="VBoxContainer" parent="CanvasLayer/LobbyScreen/LobbyPanel"]
+layout_mode = 0
+offset_left = 56.0
+offset_top = 42.0
+offset_right = 1584.0
+offset_bottom = 902.0
+theme_override_constants/separation = 18
+
+[node name="LobbyTitle" type="Label" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 72
+text = "Lobby"
+
+[node name="LobbySubtitle" type="Label" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 0.9)
+theme_override_font_sizes/font_size = 28
+text = "Choose nicknames and fill up to 8 slots with AI fighters."
+
+[node name="LobbyInfo" type="Label" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.58, 0.92)
+theme_override_font_sizes/font_size = 22
+text = "Devices on this LAN share one lobby. The first connected player is host and can fill open slots with AI."
+autowrap_mode = 3
+
+[node name="SlotsHeader" type="HBoxContainer" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="SlotHeaderLabel" type="Label" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox/SlotsHeader"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "Slot"
+
+[node name="NameHeaderLabel" type="Label" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox/SlotsHeader"]
+custom_minimum_size = Vector2(760, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "Nickname"
+
+[node name="TypeHeaderLabel" type="Label" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox/SlotsHeader"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "Type"
+
+[node name="SlotsScroll" type="ScrollContainer" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox"]
+custom_minimum_size = Vector2(0, 470)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SlotsVBox" type="VBoxContainer" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox/SlotsScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="LobbyButtons" type="HBoxContainer" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="BackToTitleButton" type="Button" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox/LobbyButtons"]
+custom_minimum_size = Vector2(280, 82)
+layout_mode = 2
+theme_override_font_sizes/font_size = 34
+text = "Back"
+
+[node name="StartMatchButton" type="Button" parent="CanvasLayer/LobbyScreen/LobbyPanel/LobbyVBox/LobbyButtons"]
+custom_minimum_size = Vector2(380, 82)
+layout_mode = 2
+theme_override_font_sizes/font_size = 34
+text = "Start Match"
 
 [node name="MobileControls" type="Control" parent="CanvasLayer" unique_id=519227444]
 visible = false

@@ -1,13 +1,15 @@
 extends CharacterBody2D
 
 const GREEN_SATELLITE_SCENE = preload("res://GreenSatellite.tscn")
+const TIP_SCRIPT = preload("res://tip.gd")
 
 @export var move_speed: float = 1450.0
 @export var player_id: int = 0
 
 const BASE_MODEL_SCALE := 3.1
-const FACING_SMOOTHNESS := 16.0
 const MAX_ENERGY := 10
+const MAX_LEGS := 12
+const AUTO_SPIN_SPEED := 2.4
 const DASH_ENERGY_COST := 3
 const DASH_COOLDOWN := 0.45
 const DASH_TIME := 0.1
@@ -23,7 +25,7 @@ const DAMAGE_NUMBER_OFFSET := Vector2(0, -240)
 const STATS_NORMAL_COLOR := Color.WHITE
 const STATS_DAMAGE_COLOR := Color(1.0, 0.2, 0.2)
 const STATS_DAMAGE_FLASH_TIME := 0.28
-const BODY_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.97)
+const BODY_COLOR := Color(1.0, 1.0, 1.0, 0.97)
 const DAMAGE_SOUND_MIX_RATE := 22050.0
 const DAMAGE_SOUND_DURATION := 0.28
 const DAMAGE_SOUND_VOLUME_DB := -7.0
@@ -34,16 +36,26 @@ const CLASH_SOUND_MIX_RATE := 22050.0
 const CLASH_SOUND_DURATION := 0.18
 const CLASH_SOUND_VOLUME_DB := -4.0
 const BODY_POINT_COUNT := 48
+const LEG_LENGTH := 440.0
+const LEG_BASE_HALF_ANGLE := 0.24
+const ARM_MAX_HP := 20
+const ARM_CLASH_DAMAGE := 5
+const ARM_RADIUS := 52.0
 
 var hp: int = 100
 var energy: int = 0
+var leg_count: int = 1
+var arm_hp: Array[int] = [ARM_MAX_HP]
 var alive := true
+var entity_id := ""
+var network_proxy := false
 
 var move_input: Vector2 = Vector2.ZERO
-var facing_direction: Vector2 = Vector2.RIGHT
 var recently_hit := {}
 var recent_clashes := {}
 var green_satellites: Array = []
+var tip_nodes: Array[Area2D] = []
+var visual_nodes: Array[Node] = []
 var stats_flash_tween: Tween = null
 var dash_tween: Tween = null
 var dash_cooldown_remaining := 0.0
@@ -59,11 +71,11 @@ var clash_audio_player: AudioStreamPlayer = null
 @onready var tip_collision_shape = $Tip/CollisionShape2D
 
 func _ready() -> void:
-	tip.owner_player = self
+	add_to_group("combat_players")
 	scale = Vector2.ONE * BASE_MODEL_SCALE
 	label.top_level = true
 	label.add_theme_color_override("font_color", STATS_NORMAL_COLOR)
-	create_visual_model()
+	rebuild_model()
 	setup_audio()
 	update_label()
 	update_label_position()
@@ -72,15 +84,17 @@ func _physics_process(delta: float) -> void:
 	if !alive:
 		return
 
+	if network_proxy:
+		update_label_position()
+		return
+
 	update_cooldowns(delta)
 
 	if dash_cooldown_remaining > 0.0:
 		dash_cooldown_remaining = maxf(dash_cooldown_remaining - delta, 0.0)
 
 	if !is_dashing:
-		if move_input.length_squared() > 0.0001:
-			facing_direction = move_input.normalized()
-			rotation = lerp_angle(rotation, facing_direction.angle(), minf(delta * FACING_SMOOTHNESS, 1.0))
+		rotation += AUTO_SPIN_SPEED * delta
 		velocity = move_input.normalized() * move_speed
 		move_and_slide()
 
@@ -100,8 +114,77 @@ func update_cooldowns(delta: float) -> void:
 func set_input(dir: Vector2) -> void:
 	move_input = dir
 
-func set_rotation_input(value: float) -> void:
+func set_facing_direction(direction: Vector2) -> void:
+	if direction == Vector2.ZERO:
+		return
+	rotation = direction.angle()
+
+func set_rotation_input(_value: float) -> void:
 	return
+
+func set_network_proxy(enabled: bool) -> void:
+	network_proxy = enabled
+	if body_hurtbox != null:
+		body_hurtbox.monitoring = !enabled
+		body_hurtbox.monitorable = !enabled
+		var hurtbox_shape := body_hurtbox.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		if hurtbox_shape != null:
+			hurtbox_shape.disabled = enabled
+	for current_tip in tip_nodes:
+		if current_tip == null:
+			continue
+		current_tip.monitoring = !enabled
+		current_tip.monitorable = !enabled
+		var shape := current_tip.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		if shape != null:
+			shape.disabled = enabled
+
+func get_snapshot() -> Dictionary:
+	return {
+		"entity_id": entity_id,
+		"player_id": int(player_id),
+		"nickname": str(get_meta("nickname", "")),
+		"controller": str(get_meta("controller", "")),
+		"owner_id": str(get_meta("owner_id", "")),
+		"position": [global_position.x, global_position.y],
+		"rotation": rotation,
+		"hp": hp,
+		"energy": energy,
+		"leg_count": leg_count,
+		"arm_hp": arm_hp.duplicate(),
+		"alive": alive,
+	}
+
+func apply_network_snapshot(data: Dictionary) -> void:
+	entity_id = str(data.get("entity_id", entity_id))
+	player_id = int(data.get("player_id", player_id))
+	set_meta("nickname", str(data.get("nickname", get_meta("nickname", ""))))
+	set_meta("controller", str(data.get("controller", get_meta("controller", ""))))
+	set_meta("owner_id", str(data.get("owner_id", get_meta("owner_id", ""))))
+	var position_data = data.get("position", [global_position.x, global_position.y])
+	if position_data is Array and position_data.size() >= 2:
+		global_position = Vector2(float(position_data[0]), float(position_data[1]))
+	rotation = float(data.get("rotation", rotation))
+	hp = int(data.get("hp", hp))
+	energy = int(data.get("energy", energy))
+	var next_arm_hp = data.get("arm_hp", arm_hp)
+	if next_arm_hp is Array:
+		arm_hp.clear()
+		for value in next_arm_hp:
+			arm_hp.append(int(value))
+	var next_leg_count := int(data.get("leg_count", arm_hp.size()))
+	if arm_hp.is_empty() and next_leg_count > 0:
+		for _i in range(next_leg_count):
+			arm_hp.append(ARM_MAX_HP)
+	leg_count = arm_hp.size()
+	if next_leg_count != leg_count:
+		leg_count = next_leg_count
+	if tip_nodes.size() != leg_count:
+		rebuild_model()
+	alive = bool(data.get("alive", alive))
+	sync_energy_satellites()
+	update_label()
+	update_label_position()
 
 func try_dash_attack() -> bool:
 	if !alive or is_dashing or dash_cooldown_remaining > 0.0:
@@ -155,6 +238,32 @@ func gain_energy(amount: int = 1) -> bool:
 	play_green_pickup_sound()
 	return true
 
+func set_energy_amount(value: int) -> void:
+	energy = clampi(value, 0, MAX_ENERGY)
+	sync_energy_satellites()
+	update_label()
+
+func deposit_all_energy() -> int:
+	var deposited := energy
+	if deposited <= 0:
+		return 0
+	energy = 0
+	sync_energy_satellites()
+	update_label()
+	return deposited
+
+func gain_leg(amount: int = 1) -> bool:
+	var previous_leg_count := leg_count
+	var target_leg_count := mini(leg_count + amount, MAX_LEGS)
+	while arm_hp.size() < target_leg_count:
+		arm_hp.append(ARM_MAX_HP)
+	leg_count = arm_hp.size()
+	if leg_count == previous_leg_count:
+		return false
+	rebuild_model()
+	play_green_pickup_sound()
+	return true
+
 func add_green_satellite() -> bool:
 	return gain_energy(1)
 
@@ -164,11 +273,21 @@ func can_hit(target: Node) -> bool:
 func register_hit(target: Node) -> void:
 	recently_hit[target] = HIT_COOLDOWN
 
-func can_clash(target: Node) -> bool:
-	return alive and target != self and !recent_clashes.has(target)
+func can_arm_clash(other: Node, my_arm_index: int, other_arm_index: int) -> bool:
+	if !alive or other == self:
+		return false
+	return !recent_clashes.has(get_arm_clash_key(other, my_arm_index, other_arm_index))
 
-func register_clash(target: Node) -> void:
-	recent_clashes[target] = CLASH_COOLDOWN
+func register_arm_clash(other: Node, my_arm_index: int, other_arm_index: int) -> void:
+	recent_clashes[get_arm_clash_key(other, my_arm_index, other_arm_index)] = CLASH_COOLDOWN
+
+func get_arm_clash_key(other: Node, my_arm_index: int, other_arm_index: int) -> String:
+	var other_entity_id := ""
+	if other != null and is_instance_valid(other):
+		other_entity_id = str(other.get("entity_id"))
+		if other_entity_id.is_empty():
+			other_entity_id = str(other.get_instance_id())
+	return "%s:%d:%d" % [other_entity_id, my_arm_index, other_arm_index]
 
 func is_body_hurtbox(area: Area2D) -> bool:
 	return area == body_hurtbox
@@ -176,16 +295,24 @@ func is_body_hurtbox(area: Area2D) -> bool:
 func get_tip_direction() -> Vector2:
 	var direction: Vector2 = (get_tip_global_position() - global_position).normalized()
 	if direction == Vector2.ZERO:
-		return facing_direction
+		return Vector2.RIGHT.rotated(rotation)
 	return direction
 
 func get_tip_global_position() -> Vector2:
-	return tip.to_global(get_tip_local_center())
+	var primary_shape := get_primary_tip_collision_shape()
+	if primary_shape == null:
+		return global_position
+	return to_global(primary_shape.position)
 
 func get_tip_local_center() -> Vector2:
-	if tip_collision_shape != null:
-		return tip_collision_shape.position
-	return Vector2(get_body_radius() * 2.2, 0.0)
+	if leg_count <= 0:
+		return Vector2(get_body_radius(), 0.0)
+	return get_leg_tip_local_center(0)
+
+func get_primary_tip_collision_shape() -> CollisionShape2D:
+	if tip_nodes.is_empty():
+		return tip_collision_shape
+	return tip_nodes[0].get_node_or_null("CollisionShape2D") as CollisionShape2D
 
 func deal_tip_damage(other: Node) -> void:
 	if !alive or other == null or !is_instance_valid(other):
@@ -201,28 +328,59 @@ func deal_tip_damage(other: Node) -> void:
 		push_direction_to_other = get_tip_direction()
 	other.apply_knockback(push_direction_to_other, BODY_KNOCKBACK_DISTANCE)
 
-func handle_tip_clash(other: Node) -> void:
+func handle_arm_clash(other: Node, my_arm_index: int, other_arm_index: int) -> void:
 	if !alive or other == null or !is_instance_valid(other):
 		return
 	if !other.alive:
 		return
+	if my_arm_index < 0 or my_arm_index >= arm_hp.size():
+		return
+	if other_arm_index < 0:
+		return
 	if int(player_id) > int(other.player_id):
 		return
-	if !can_clash(other) or !other.can_clash(self):
+	if !can_arm_clash(other, my_arm_index, other_arm_index):
+		return
+	if other.has_method("can_arm_clash") and !bool(other.call("can_arm_clash", self, other_arm_index, my_arm_index)):
 		return
 
-	register_clash(other)
-	other.register_clash(self)
+	register_arm_clash(other, my_arm_index, other_arm_index)
+	if other.has_method("register_arm_clash"):
+		other.call("register_arm_clash", self, other_arm_index, my_arm_index)
+	damage_arm(my_arm_index, ARM_CLASH_DAMAGE)
+	if other.has_method("damage_arm"):
+		other.damage_arm(other_arm_index, ARM_CLASH_DAMAGE)
 
-	var separation: Vector2 = (get_tip_global_position() - other.get_tip_global_position()).normalized()
-	if separation == Vector2.ZERO:
-		separation = (global_position - other.global_position).normalized()
+	var separation: Vector2 = (global_position - other.global_position).normalized()
 	if separation == Vector2.ZERO:
 		separation = Vector2.RIGHT
 
 	apply_knockback(separation, CLASH_KNOCKBACK_DISTANCE)
 	other.apply_knockback(-separation, CLASH_KNOCKBACK_DISTANCE)
 	play_clash_sound()
+
+func damage_arm(index: int, amount: int) -> void:
+	if index < 0 or index >= arm_hp.size():
+		return
+	arm_hp[index] = max(arm_hp[index] - amount, 0)
+	if arm_hp[index] <= 0:
+		arm_hp.remove_at(index)
+		leg_count = arm_hp.size()
+		rebuild_model()
+
+func damage_nearest_arm(amount: int, source_position: Vector2) -> void:
+	if arm_hp.is_empty():
+		take_damage(amount)
+		return
+	var best_index := 0
+	var best_distance_sq := INF
+	for i in range(arm_hp.size()):
+		var arm_tip_position := to_global(get_leg_tip_local_center(i))
+		var distance_sq := arm_tip_position.distance_squared_to(source_position)
+		if distance_sq < best_distance_sq:
+			best_distance_sq = distance_sq
+			best_index = i
+	damage_arm(best_index, amount)
 
 func apply_knockback(direction: Vector2, distance: float = BODY_KNOCKBACK_DISTANCE) -> void:
 	var tween := create_tween()
@@ -241,6 +399,12 @@ func hit_by_player(player: Node2D) -> void:
 
 func get_attack_power() -> int:
 	return CRYSTAL_DAMAGE
+
+func get_team_id() -> int:
+	return player_id
+
+func is_attackable() -> bool:
+	return alive
 
 func get_camera_zoom_factor() -> float:
 	return 1.0
@@ -348,35 +512,119 @@ func get_body_radius() -> float:
 		return 180.0
 	return circle_shape.radius
 
-func create_visual_model() -> void:
-	create_silhouette_outline()
+func rebuild_model() -> void:
+	leg_count = arm_hp.size()
+	clear_visual_nodes()
+	rebuild_tip_nodes()
+	create_body_visual()
+	create_leg_visuals()
+	set_network_proxy(network_proxy)
 
-func create_silhouette_outline() -> void:
-	var outline := Line2D.new()
-	outline.name = "SilhouetteOutline"
-	outline.width = 16.0
-	outline.default_color = BODY_OUTLINE_COLOR
-	outline.antialiased = true
-	outline.closed = true
-	outline.z_index = 3
-	outline.points = build_silhouette_outline()
-	add_child(outline)
+func clear_visual_nodes() -> void:
+	for node in visual_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	visual_nodes.clear()
 
-func build_silhouette_outline() -> PackedVector2Array:
+func rebuild_tip_nodes() -> void:
+	for child in get_children():
+		if child is Area2D and child != tip and str(child.name).begins_with("ExtraTip"):
+			child.queue_free()
+
+	tip_nodes.clear()
+	if leg_count <= 0:
+		tip.monitoring = false
+		tip.monitorable = false
+		tip_collision_shape.disabled = true
+		return
+
+	tip_nodes.append(tip)
+
+	for i in range(1, leg_count):
+		var extra_tip := Area2D.new()
+		extra_tip.name = "ExtraTip%d" % i
+		extra_tip.set_script(TIP_SCRIPT)
+		var shape := CollisionShape2D.new()
+		shape.shape = tip_collision_shape.shape.duplicate()
+		extra_tip.add_child(shape)
+		add_child(extra_tip)
+		tip_nodes.append(extra_tip)
+
+	for i in range(tip_nodes.size()):
+		configure_tip_node(tip_nodes[i], i)
+
+func configure_tip_node(tip_node: Area2D, index: int) -> void:
+	tip_node.position = Vector2.ZERO
+	tip_node.set("owner_player", self)
+	tip_node.set("arm_index", index)
+	var shape := tip_node.get_node_or_null("CollisionShape2D") as CollisionShape2D
+	if shape == null:
+		return
+	var capsule := CapsuleShape2D.new()
+	capsule.radius = ARM_RADIUS
+	capsule.height = LEG_LENGTH
+	shape.shape = capsule
+	shape.position = get_leg_hitbox_center(index)
+	shape.rotation = get_leg_angle(index) + PI * 0.5
+
+func create_body_visual() -> void:
 	var radius := get_body_radius()
-	var attach_upper_angle := deg_to_rad(-48.0)
-	var attach_lower_angle := deg_to_rad(-12.0)
-	var attach_upper := Vector2(cos(attach_upper_angle), sin(attach_upper_angle)) * radius
-	var attach_lower := Vector2(cos(attach_lower_angle), sin(attach_lower_angle)) * radius
-	var tip_point := Vector2(radius * 2.55, -radius * 1.95)
+	var body_fill := Polygon2D.new()
+	body_fill.polygon = make_circle_points(radius, BODY_POINT_COUNT)
+	body_fill.color = BODY_COLOR
+	body_fill.z_index = 2
+	add_child(body_fill)
+	visual_nodes.append(body_fill)
 
-	var points := PackedVector2Array([attach_upper, tip_point, attach_lower])
-	var arc_point_count := 36
-	for i in range(arc_point_count + 1):
-		var t: float = float(i) / float(arc_point_count)
-		var angle: float = lerp(attach_lower_angle, attach_upper_angle + TAU, t)
-		points.append(Vector2(cos(angle), sin(angle)) * radius)
-	return points
+	var body_outline := Line2D.new()
+	body_outline.width = 18.0
+	body_outline.default_color = BODY_COLOR
+	body_outline.antialiased = true
+	body_outline.closed = true
+	body_outline.z_index = 3
+	body_outline.points = make_circle_points(radius, BODY_POINT_COUNT)
+	add_child(body_outline)
+	visual_nodes.append(body_outline)
+
+func create_leg_visuals() -> void:
+	for i in range(leg_count):
+		var polygon := Polygon2D.new()
+		polygon.polygon = build_leg_polygon(i)
+		polygon.color = BODY_COLOR
+		polygon.z_index = 2
+		add_child(polygon)
+		visual_nodes.append(polygon)
+
+		var outline := Line2D.new()
+		outline.width = 18.0
+		outline.default_color = BODY_COLOR
+		outline.antialiased = true
+		outline.closed = true
+		outline.z_index = 3
+		outline.points = polygon.polygon
+		add_child(outline)
+		visual_nodes.append(outline)
+
+func build_leg_polygon(index: int) -> PackedVector2Array:
+	var radius := get_body_radius()
+	var angle := get_leg_angle(index)
+	var base_left := Vector2.RIGHT.rotated(angle - LEG_BASE_HALF_ANGLE) * radius
+	var base_right := Vector2.RIGHT.rotated(angle + LEG_BASE_HALF_ANGLE) * radius
+	var tip_point := Vector2.RIGHT.rotated(angle) * (radius + LEG_LENGTH)
+	return PackedVector2Array([base_left, tip_point, base_right])
+
+func get_leg_tip_local_center(index: int) -> Vector2:
+	var radius := get_body_radius()
+	var angle := get_leg_angle(index)
+	return Vector2.RIGHT.rotated(angle) * (radius + LEG_LENGTH)
+
+func get_leg_hitbox_center(index: int) -> Vector2:
+	var radius := get_body_radius()
+	var angle := get_leg_angle(index)
+	return Vector2.RIGHT.rotated(angle) * (radius + LEG_LENGTH * 0.5)
+
+func get_leg_angle(index: int) -> float:
+	return TAU * float(index) / float(max(leg_count, 1))
 
 func make_circle_points(radius: float, point_count: int) -> PackedVector2Array:
 	var points := PackedVector2Array()

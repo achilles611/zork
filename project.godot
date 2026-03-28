@@ -14,6 +14,10 @@ config/name="zork"
 run/main_scene="uid://cu0ohfuma0scw"
 config/features=PackedStringArray("4.6", "Forward Plus")
 
+[autoload]
+
+NetworkClient="*res://network_client.gd"
+
 [display]
 
 window/size/viewport_width=1980

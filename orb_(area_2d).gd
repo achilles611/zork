@@ -13,6 +13,8 @@ var move_direction := Vector2.RIGHT
 var direction_timer := 0.0
 var arena_center := Vector2.ZERO
 var arena_radius := 0.0
+var entity_id := ""
+var network_proxy := false
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
@@ -21,6 +23,8 @@ func _ready() -> void:
 	update_visual()
 
 func _physics_process(delta: float) -> void:
+	if network_proxy:
+		return
 	if arena_radius <= 0.0:
 		return
 
@@ -83,3 +87,26 @@ func pick_new_direction() -> void:
 
 	move_direction = random_direction
 	direction_timer = randf_range(DIRECTION_CHANGE_TIME_MIN, DIRECTION_CHANGE_TIME_MAX)
+
+func set_network_proxy(enabled: bool) -> void:
+	network_proxy = enabled
+	monitoring = !enabled
+	monitorable = !enabled
+	var shape := get_node_or_null("CollisionShape2D") as CollisionShape2D
+	if shape != null:
+		shape.disabled = enabled
+
+func get_snapshot() -> Dictionary:
+	return {
+		"entity_id": entity_id,
+		"position": [global_position.x, global_position.y],
+		"orb_type": int(orb_type),
+	}
+
+func apply_network_snapshot(data: Dictionary) -> void:
+	entity_id = str(data.get("entity_id", entity_id))
+	orb_type = int(data.get("orb_type", int(orb_type)))
+	var position_data = data.get("position", [global_position.x, global_position.y])
+	if position_data is Array and position_data.size() >= 2:
+		global_position = Vector2(float(position_data[0]), float(position_data[1]))
+	update_visual()

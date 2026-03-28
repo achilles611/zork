@@ -1,0 +1,10 @@
+From PowerShell in this folder:
+
+Run the game:
+powershell -ExecutionPolicy Bypass -File .\run_game.ps1
+
+Open the Godot editor:
+powershell -ExecutionPolicy Bypass -File .\run_game.ps1 -Editor
+
+Use the console executable:
+powershell -ExecutionPolicy Bypass -File .\run_game.ps1 -Console

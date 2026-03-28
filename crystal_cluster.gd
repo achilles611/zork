@@ -21,6 +21,8 @@ var hp_bar_fill: Line2D = null
 var crystal_hit_audio_player: AudioStreamPlayer = null
 var crystal_shatter_audio_player: AudioStreamPlayer = null
 var shattered := false
+var entity_id := ""
+var network_proxy := false
 
 func _ready() -> void:
 	create_visuals()
@@ -31,6 +33,9 @@ func _ready() -> void:
 	update_hp_bar_position()
 
 func _process(delta: float) -> void:
+	if network_proxy:
+		update_hp_bar_position()
+		return
 	update_attacker_cooldowns(delta)
 	update_hp_bar_position()
 
@@ -245,3 +250,40 @@ func make_wav_stream(buffer: StreamPeerBuffer, mix_rate: float) -> AudioStreamWA
 	stream.stereo = false
 	stream.data = buffer.data_array
 	return stream
+
+func set_network_proxy(enabled: bool) -> void:
+	network_proxy = enabled
+	var solid_shape := $SolidBody/CollisionShape2D as CollisionShape2D
+	var hurtbox_shape := $Hurtbox/CollisionShape2D as CollisionShape2D
+	if solid_shape != null:
+		solid_shape.disabled = enabled
+	$Hurtbox.monitoring = !enabled
+	$Hurtbox.monitorable = !enabled
+	if hurtbox_shape != null:
+		hurtbox_shape.disabled = enabled
+
+func get_snapshot() -> Dictionary:
+	return {
+		"entity_id": entity_id,
+		"position": [global_position.x, global_position.y],
+		"scale": scale.x,
+		"hp": hp,
+		"shattered": shattered,
+	}
+
+func apply_network_snapshot(data: Dictionary) -> void:
+	entity_id = str(data.get("entity_id", entity_id))
+	var position_data = data.get("position", [global_position.x, global_position.y])
+	if position_data is Array and position_data.size() >= 2:
+		global_position = Vector2(float(position_data[0]), float(position_data[1]))
+	var network_scale := float(data.get("scale", scale.x))
+	scale = Vector2.ONE * network_scale
+	hp = int(data.get("hp", hp))
+	shattered = bool(data.get("shattered", shattered))
+	update_hp_bar_visual()
+	update_hp_bar_position()
+	if hp_bar_root != null:
+		hp_bar_root.visible = !shattered
+	for child in get_children():
+		if child is CanvasItem and child != hp_bar_root:
+			child.visible = !shattered

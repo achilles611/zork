@@ -19,12 +19,18 @@ var joystick_touch_id := -1
 @onready var rotate_button = $Buttons/FireButton
 
 func _ready() -> void:
-	set_process_input(true)
+	set_process_input(false)
 	get_viewport().size_changed.connect(_layout_controls)
 	dash_button.pressed.connect(_on_dash_button_pressed)
 	rotate_button.visible = false
 	_layout_controls()
 	reset_joystick()
+
+func set_controls_active(active: bool) -> void:
+	visible = active
+	set_process_input(active)
+	if !active:
+		reset_joystick()
 
 func get_move_vector() -> Vector2:
 	return move_vector
