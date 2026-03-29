@@ -1,0 +1,262 @@
+:root {
+  --bg: #030406;
+  --panel: rgba(14, 16, 20, 0.94);
+  --panel-edge: rgba(255, 255, 255, 0.08);
+  --text: #f4f6fb;
+  --muted: #b8c4dc;
+  --accent: #8de1ff;
+  --danger: #ff6a6a;
+  --gold: #ffd978;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top, rgba(38, 66, 108, 0.25), transparent 32%),
+    radial-gradient(circle at bottom, rgba(15, 48, 34, 0.22), transparent 30%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+}
+
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.screen.hidden,
+.hud.hidden {
+  display: none;
+}
+
+.screen-panel {
+  width: min(760px, calc(100vw - 48px));
+  padding: 32px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 24px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.title-art {
+  width: min(100%, 540px);
+  margin-bottom: 20px;
+}
+
+.button-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.pvp-join-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.room-code-input {
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  padding: 16px 18px;
+  font-size: 18px;
+  text-transform: uppercase;
+}
+
+.join-button {
+  width: auto;
+  padding-inline: 22px;
+}
+
+.menu-button {
+  width: 100%;
+  border: 0;
+  border-radius: 18px;
+  padding: 22px 24px;
+  font-size: clamp(24px, 3vw, 42px);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.menu-button:hover {
+  background: rgba(141, 225, 255, 0.18);
+  transform: translateY(-2px);
+}
+
+.menu-button.secondary {
+  font-size: clamp(20px, 2vw, 28px);
+}
+
+.screen-hint {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: 10px;
+}
+
+.hud-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  max-width: 420px;
+}
+
+.pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 11px;
+  backdrop-filter: blur(6px);
+}
+
+.help-pill {
+  color: var(--muted);
+}
+
+.base-controls {
+  position: absolute;
+  top: 104px;
+  left: 12px;
+  width: min(248px, calc(100vw - 28px));
+  display: grid;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.control-card {
+  padding: 10px 11px;
+  border-radius: 14px;
+  border: 1px solid rgba(141, 225, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(13, 19, 28, 0.96), rgba(8, 12, 18, 0.92)),
+    var(--panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+}
+
+.control-card h3 {
+  margin: 0 0 5px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(244, 246, 251, 0.9);
+}
+
+.control-copy {
+  margin: 0 0 8px;
+  color: var(--muted);
+  line-height: 1.25;
+  font-size: 11px;
+}
+
+.control-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.upgrade-button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+  padding: 8px 10px;
+  border-radius: 11px;
+  text-align: left;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+}
+
+.upgrade-button.is-unaffordable {
+  opacity: 0.72;
+}
+
+.upgrade-button.flash-error {
+  background: rgba(255, 106, 106, 0.88);
+  border-color: rgba(255, 186, 186, 0.95);
+  color: #fff8f8;
+  box-shadow: inset 0 0 0 999px rgba(255, 106, 106, 0.78), 0 0 0 2px rgba(255, 106, 106, 0.22);
+}
+
+.upgrade-button.flash-error:hover {
+  background: rgba(255, 106, 106, 0.88);
+  border-color: rgba(255, 186, 186, 0.95);
+  color: #fff8f8;
+  box-shadow: inset 0 0 0 999px rgba(255, 106, 106, 0.78), 0 0 0 2px rgba(255, 106, 106, 0.22);
+  transform: none;
+}
+
+.upgrade-button:hover {
+  transform: translateY(-1px);
+  background: rgba(141, 225, 255, 0.16);
+  border-color: rgba(141, 225, 255, 0.34);
+}
+
+.button-label {
+  min-width: 0;
+}
+
+.button-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 8px;
+  flex-shrink: 0;
+  color: #dffde0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cost-value {
+  min-width: 14px;
+  text-align: right;
+}
+
+.crystal-icon {
+  width: 10px;
+  height: 14px;
+  display: inline-block;
+  background: linear-gradient(180deg, #bfff98, #53e56b 65%, #1ca63c);
+  clip-path: polygon(50% 0%, 88% 26%, 72% 100%, 28% 100%, 12% 26%);
+  box-shadow: 0 0 6px rgba(116, 255, 138, 0.38);
+}

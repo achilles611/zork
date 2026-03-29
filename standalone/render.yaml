@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: zork-standalone
+    env: node
+    plan: free
+    rootDir: standalone
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
