@@ -4,4 +4,5 @@
 zork-local-https.cer
 zork-local-https.pfx
 zork-local-https.password.txt
+/build/web/
 /build/web/*.import
