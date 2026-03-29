@@ -209,6 +209,9 @@ func update_timer_ring() -> void:
 func hit_by_player(player: Node2D) -> void:
 	if !castle_built:
 		return
+	if player != null and player.has_method("get_team_id"):
+		if int(player.call("get_team_id")) == owner_player_id:
+			return
 	var amount := 10
 	if player != null and player.has_method("get_attack_power"):
 		amount = int(player.call("get_attack_power"))

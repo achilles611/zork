@@ -19,6 +19,8 @@ const NPC_ATTACK_DELAY := 3.0
 const ADMIN_LASER_SOUND_MIX_RATE := 22050.0
 const ADMIN_LASER_SOUND_DURATION := 0.55
 const ADMIN_LASER_SOUND_VOLUME_DB := -4.0
+const BACKGROUND_MUSIC_MIX_RATE := 22050.0
+const BACKGROUND_MUSIC_VOLUME_DB := -18.0
 const MAX_LOBBY_SLOTS := 8
 const PLAYER_SPAWN_RADIUS_FACTOR := 0.82
 const SNAPSHOT_INTERVAL := 0.08
@@ -92,6 +94,7 @@ var orb_id_counter := 0
 var crystal_id_counter := 0
 var last_sent_move := Vector2.ZERO
 var pending_dash_send := false
+var background_music_player: AudioStreamPlayer = null
 
 func get_camera_world_size() -> Vector2:
 	var viewport_size = get_viewport_rect().size
@@ -107,6 +110,7 @@ func _ready() -> void:
 	camera.position = arena_center
 	camera.enabled = true
 	setup_background()
+	setup_background_music()
 	setup_camera_limits()
 	setup_arena_border()
 	setup_console()
@@ -264,6 +268,65 @@ func setup_background() -> void:
 		else:
 			star.color = Color(0.95, 0.98, 1.0, rng.randf_range(0.45, 0.9))
 		background_node.add_child(star)
+
+func setup_background_music() -> void:
+	if background_music_player != null:
+		return
+	background_music_player = AudioStreamPlayer.new()
+	background_music_player.volume_db = BACKGROUND_MUSIC_VOLUME_DB
+	background_music_player.stream = build_background_music_stream()
+	add_child(background_music_player)
+	background_music_player.play()
+
+func build_background_music_stream() -> AudioStreamWAV:
+	var step_duration := 0.19
+	var steps_per_bar := 8
+	var lead_sequence := [
+		[57, 64, 69, 72, 69, 64, 60, 64],
+		[57, 64, 69, 72, 76, 72, 69, 64],
+		[57, 60, 64, 69, 72, 69, 64, 60],
+		[60, 64, 67, 72, 76, 72, 67, 64],
+		[57, 64, 69, 72, 69, 64, 60, 64],
+		[57, 64, 69, 72, 76, 72, 69, 64],
+		[57, 60, 64, 69, 72, 69, 64, 60],
+		[60, 64, 67, 72, 79, 76, 72, 67],
+	]
+	var bass_sequence := [45, 45, 45, 48, 45, 45, 45, 48]
+	var total_steps := lead_sequence.size() * steps_per_bar
+	var frame_count: int = int(BACKGROUND_MUSIC_MIX_RATE * step_duration * total_steps)
+	var buffer := StreamPeerBuffer.new()
+	buffer.big_endian = false
+	for i in range(frame_count):
+		var t: float = float(i) / BACKGROUND_MUSIC_MIX_RATE
+		var step_index := int(floor(t / step_duration))
+		var bar_index := clampi(step_index / steps_per_bar, 0, lead_sequence.size() - 1)
+		var within_bar := step_index % steps_per_bar
+		var step_time := fmod(t, step_duration)
+		var lead_midi := lead_sequence[bar_index][within_bar]
+		var bass_midi := bass_sequence[bar_index]
+		var lead_hz := 440.0 * pow(2.0, (float(lead_midi) - 69.0) / 12.0)
+		var bass_hz := 440.0 * pow(2.0, (float(bass_midi) - 69.0) / 12.0)
+		var lead_env := max(1.0 - (step_time / step_duration), 0.0)
+		var burst_env := smoothstep(0.0, step_duration * 0.2, step_time) * max(1.0 - (step_time / (step_duration * 0.95)), 0.0)
+		var bass_phase := sin(TAU * bass_hz * t)
+		var lead_square := sign(sin(TAU * lead_hz * t))
+		var lead_octave := sign(sin(TAU * lead_hz * 2.0 * t)) * 0.18
+		var hopeful_burst := 0.0
+		if bar_index % 4 == 3:
+			hopeful_burst = sin(TAU * lead_hz * 1.5 * t) * 0.12 * burst_env
+		var sample := (lead_square * 0.18 + lead_octave) * lead_env + bass_phase * 0.14 + hopeful_burst
+		sample += (randf() * 2.0 - 1.0) * 0.012
+		sample = clampf(sample, -1.0, 1.0)
+		buffer.put_16(int(round(sample * 32767.0)))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = BACKGROUND_MUSIC_MIX_RATE
+	stream.stereo = false
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_begin = 0
+	stream.loop_end = frame_count
+	stream.data = buffer.data_array
+	return stream
 
 func make_circle_points(radius: float, point_count: int) -> PackedVector2Array:
 	var points := PackedVector2Array()
@@ -992,7 +1055,7 @@ func run_console_command(command: String) -> void:
 		return
 	match command.to_lower():
 		"help":
-			append_console_log("Commands: help, clear, god, energy = 10")
+			append_console_log("Commands: help, clear, god, energy = 20")
 		"clear":
 			console_log.clear()
 		"god":
@@ -1009,9 +1072,9 @@ func try_run_energy_console_command(command: String) -> bool:
 		return false
 	var energy_text := pieces[1].strip_edges()
 	if energy_text.is_empty() or !energy_text.is_valid_int():
-		append_console_log("Use `energy = 10`.")
+		append_console_log("Use `energy = 20`.")
 		return true
-	var target_energy := clampi(int(energy_text), 0, 10)
+	var target_energy := clampi(int(energy_text), 0, 20)
 	run_energy_console_command(target_energy)
 	return true
 
@@ -1030,7 +1093,7 @@ func run_energy_console_command(target_energy: int) -> void:
 
 func apply_network_admin_set_energy(payload: Dictionary) -> void:
 	var client_id := str(payload.get("client_id", ""))
-	var target_energy := clampi(int(payload.get("energy", 0)), 0, 10)
+	var target_energy := clampi(int(payload.get("energy", 0)), 0, 20)
 	var target_player := get_player_for_client_id(client_id)
 	if target_player == null:
 		append_console_log("No player found for energy command.")

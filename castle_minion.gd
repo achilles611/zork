@@ -3,6 +3,7 @@ extends CharacterBody2D
 const SPEED := 1320.0
 const MAX_HP := 10
 const DAMAGE := 5
+const PLAYER_ARM_DAMAGE := 20
 const ATTACK_RANGE := 120.0
 const BODY_RADIUS := 72.0
 const STAR_SPIN_SPEED := 11.0
@@ -15,6 +16,7 @@ var hp := MAX_HP
 var alive := true
 var network_proxy := false
 var visual_root: Node2D = null
+var owner_collision_exception_applied := false
 
 @onready var hurtbox = $Hurtbox
 
@@ -22,10 +24,13 @@ func _ready() -> void:
 	add_to_group("castle_minions")
 	create_visuals()
 	set_network_proxy(network_proxy)
+	sync_owner_collision_exception()
 
 func _physics_process(_delta: float) -> void:
 	if !alive or network_proxy:
 		return
+
+	sync_owner_collision_exception()
 
 	if visual_root != null:
 		visual_root.rotation += STAR_SPIN_SPEED * _delta
@@ -115,6 +120,9 @@ func take_damage(amount: int) -> void:
 		kill_instantly()
 
 func hit_by_player(player: Node2D) -> void:
+	if player != null and player.has_method("get_team_id"):
+		if int(player.call("get_team_id")) == owner_player_id:
+			return
 	var amount := DAMAGE
 	if player != null and player.has_method("get_attack_power"):
 		amount = int(player.call("get_attack_power"))
@@ -123,8 +131,12 @@ func hit_by_player(player: Node2D) -> void:
 func attack_target(target: Node2D) -> void:
 	if target == null or !is_instance_valid(target):
 		return
+	if target.has_method("get_team_id") and int(target.call("get_team_id")) == owner_player_id:
+		return
 	if target.has_method("damage_nearest_arm"):
-		target.call("damage_nearest_arm", DAMAGE, global_position)
+		target.call("damage_nearest_arm", PLAYER_ARM_DAMAGE, global_position)
+	elif target.has_method("take_body_hit"):
+		target.call("take_body_hit", DAMAGE, self, global_position)
 	elif target.has_method("take_damage"):
 		target.call("take_damage", DAMAGE)
 	kill_instantly()
@@ -185,6 +197,26 @@ func apply_network_snapshot(data: Dictionary) -> void:
 	rotation = float(data.get("rotation", rotation))
 	hp = int(data.get("hp", hp))
 	alive = bool(data.get("alive", alive))
+	sync_owner_collision_exception()
 
 func is_attackable() -> bool:
 	return alive
+
+func sync_owner_collision_exception() -> void:
+	if owner_collision_exception_applied:
+		return
+	var owner_player := find_owner_player()
+	if owner_player == null:
+		return
+	add_collision_exception_with(owner_player)
+	owner_player.add_collision_exception_with(self)
+	owner_collision_exception_applied = true
+
+func find_owner_player() -> CharacterBody2D:
+	for candidate in get_tree().get_nodes_in_group("combat_players"):
+		var player := candidate as CharacterBody2D
+		if player == null or !is_instance_valid(player):
+			continue
+		if player.has_method("get_team_id") and int(player.call("get_team_id")) == owner_player_id:
+			return player
+	return null
