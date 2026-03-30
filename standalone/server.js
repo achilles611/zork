@@ -5,8 +5,20 @@ const { WebSocketServer } = require("ws");
 
 const port = Number(process.env.PORT || 8090);
 const rooms = new Map();
+let nextClientId = 1;
+const matchState = {
+  active: false,
+  hostClientId: null,
+};
 const rootDir = __dirname;
 const parentDir = path.resolve(rootDir, "..");
+const lobbyColors = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "teal", "white", "brown"];
+const lobbySlots = Array.from({ length: 8 }, (_, index) => ({
+  type: "empty",
+  colorId: lobbyColors[index % lobbyColors.length],
+  handle: "",
+  clientId: null,
+}));
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -41,6 +53,99 @@ function cleanupRoom(roomId) {
   if (!room.host && !room.guest) {
     rooms.delete(roomId);
   }
+}
+
+function sanitizeHandle(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 18);
+}
+
+function claimLobbySlot(socket) {
+  if (Number.isInteger(socket.meta.lobbySlotIndex)) {
+    return socket.meta.lobbySlotIndex;
+  }
+  const index = lobbySlots.findIndex((slot) => slot.type === "empty");
+  if (index === -1) {
+    socket.meta.lobbySlotIndex = null;
+    return null;
+  }
+  lobbySlots[index] = {
+    ...lobbySlots[index],
+    type: "player",
+    handle: "",
+    clientId: socket.meta.clientId,
+  };
+  socket.meta.lobbySlotIndex = index;
+  return index;
+}
+
+function releaseLobbySlot(socket) {
+  if (!Number.isInteger(socket.meta.lobbySlotIndex)) {
+    return;
+  }
+  const index = socket.meta.lobbySlotIndex;
+  lobbySlots[index] = {
+    ...lobbySlots[index],
+    type: "empty",
+    handle: "",
+    clientId: null,
+  };
+  socket.meta.lobbySlotIndex = null;
+}
+
+function buildLobbyPayload(socket) {
+  return {
+    type: "lobby_sync",
+    clientId: socket.meta.clientId,
+    localSlotIndex: Number.isInteger(socket.meta.lobbySlotIndex) ? socket.meta.lobbySlotIndex : null,
+    slots: lobbySlots,
+    matchActive: matchState.active,
+    matchHostClientId: matchState.hostClientId,
+  };
+}
+
+function broadcastLobby() {
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN) {
+      send(client, buildLobbyPayload(client));
+    }
+  }
+}
+
+function getClaimedPlayers() {
+  return lobbySlots
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => slot.type === "player" && slot.clientId);
+}
+
+function findSocketByClientId(clientId) {
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN && client.meta?.clientId === clientId) {
+      return client;
+    }
+  }
+  return null;
+}
+
+function broadcastMatch(payload, excludeClientId = null) {
+  for (const client of wss.clients) {
+    if (client.readyState !== client.OPEN) {
+      continue;
+    }
+    if (excludeClientId && client.meta?.clientId === excludeClientId) {
+      continue;
+    }
+    send(client, payload);
+  }
+}
+
+function endMatch(reason = "Match ended.") {
+  if (!matchState.active) {
+    return;
+  }
+  matchState.active = false;
+  matchState.hostClientId = null;
+  broadcastMatch({ type: "match_end", reason });
+  broadcastLobby();
 }
 
 const server = http.createServer((req, res) => {
@@ -81,7 +186,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (socket) => {
-  socket.meta = { role: null, roomId: null };
+  socket.meta = { role: null, roomId: null, clientId: `client-${nextClientId++}`, lobbySlotIndex: null };
 
   socket.on("message", (raw) => {
     let message;
@@ -89,6 +194,83 @@ wss.on("connection", (socket) => {
       message = JSON.parse(String(raw));
     } catch {
       send(socket, { type: "error", message: "Invalid JSON." });
+      return;
+    }
+
+    if (message.type === "lobby_join") {
+      claimLobbySlot(socket);
+      send(socket, buildLobbyPayload(socket));
+      broadcastLobby();
+      return;
+    }
+
+    if (message.type === "lobby_handle") {
+      if (!Number.isInteger(socket.meta.lobbySlotIndex)) {
+        claimLobbySlot(socket);
+      }
+      if (!Number.isInteger(socket.meta.lobbySlotIndex)) {
+        send(socket, { type: "lobby_error", message: "Lobby is full." });
+        return;
+      }
+      lobbySlots[socket.meta.lobbySlotIndex].handle = sanitizeHandle(message.handle);
+      broadcastLobby();
+      return;
+    }
+
+    if (message.type === "lobby_color") {
+      if (!Number.isInteger(socket.meta.lobbySlotIndex)) {
+        claimLobbySlot(socket);
+      }
+      if (!Number.isInteger(socket.meta.lobbySlotIndex)) {
+        send(socket, { type: "lobby_error", message: "Lobby is full." });
+        return;
+      }
+      const colorId = String(message.colorId || "").trim();
+      if (!lobbyColors.includes(colorId)) {
+        send(socket, { type: "lobby_error", message: "Unknown color." });
+        return;
+      }
+      const taken = lobbySlots.some((slot, index) => (
+        index !== socket.meta.lobbySlotIndex &&
+        slot.type === "player" &&
+        slot.colorId === colorId
+      ));
+      if (taken) {
+        send(socket, { type: "lobby_error", message: "Color already taken." });
+        return;
+      }
+      lobbySlots[socket.meta.lobbySlotIndex].colorId = colorId;
+      broadcastLobby();
+      return;
+    }
+
+    if (message.type === "lobby_start") {
+      if (!Number.isInteger(socket.meta.lobbySlotIndex)) {
+        send(socket, { type: "lobby_error", message: "Claim a lobby slot first." });
+        return;
+      }
+      if (matchState.active) {
+        send(socket, { type: "lobby_error", message: "A match is already running." });
+        return;
+      }
+      const claimedPlayers = getClaimedPlayers();
+      if (!claimedPlayers.length) {
+        send(socket, { type: "lobby_error", message: "No players are in the lobby." });
+        return;
+      }
+      matchState.active = true;
+      matchState.hostClientId = claimedPlayers[0].slot.clientId;
+      broadcastMatch({
+        type: "match_start",
+        hostClientId: matchState.hostClientId,
+        slots: lobbySlots,
+      });
+      broadcastLobby();
+      return;
+    }
+
+    if (message.type === "match_end") {
+      endMatch("Back to lobby");
       return;
     }
 
@@ -123,6 +305,22 @@ wss.on("connection", (socket) => {
 
     const room = getRoom(socket.meta.roomId);
     if (!room) {
+      if (matchState.active) {
+        const team = Number.isInteger(socket.meta.lobbySlotIndex) ? socket.meta.lobbySlotIndex + 1 : null;
+        const hostSocket = findSocketByClientId(matchState.hostClientId);
+        if (message.type === "snapshot" && socket.meta.clientId === matchState.hostClientId) {
+          broadcastMatch({ type: "snapshot", state: message.state }, matchState.hostClientId);
+          return;
+        }
+        if (message.type === "input" && hostSocket && team != null && socket.meta.clientId !== matchState.hostClientId) {
+          send(hostSocket, { type: "input", team, input: message.input });
+          return;
+        }
+        if (message.type === "action" && hostSocket && team != null && socket.meta.clientId !== matchState.hostClientId) {
+          send(hostSocket, { type: "action", action: { ...message.action, team } });
+          return;
+        }
+      }
       send(socket, { type: "error", message: "No active room." });
       return;
     }
@@ -148,6 +346,26 @@ wss.on("connection", (socket) => {
   });
 
   socket.on("close", () => {
+    const closingTeam = Number.isInteger(socket.meta.lobbySlotIndex) ? socket.meta.lobbySlotIndex + 1 : null;
+    const wasHost = socket.meta.clientId === matchState.hostClientId;
+    releaseLobbySlot(socket);
+    if (matchState.active) {
+      if (wasHost) {
+        endMatch("Host left the match.");
+      } else if (closingTeam != null) {
+        const hostSocket = findSocketByClientId(matchState.hostClientId);
+        if (hostSocket) {
+          send(hostSocket, { type: "peer_left", team: closingTeam });
+        }
+        broadcastMatch({ type: "player_left", team: closingTeam });
+        broadcastLobby();
+      } else {
+        broadcastLobby();
+      }
+    } else {
+      broadcastLobby();
+    }
+
     const { roomId, role } = socket.meta;
     const room = getRoom(roomId);
     if (!room) {

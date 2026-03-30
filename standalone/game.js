@@ -4,11 +4,10 @@ const ctx = canvas.getContext("2d");
 const titleScreen = document.getElementById("titleScreen");
 const hud = document.getElementById("hud");
 const quickFightButton = document.getElementById("quickFightButton");
-const hostPvpButton = document.getElementById("hostPvpButton");
-const joinPvpButton = document.getElementById("joinPvpButton");
-const roomCodeInput = document.getElementById("roomCodeInput");
+const handleInput = document.getElementById("handleInput");
 const resetFightButton = document.getElementById("resetFightButton");
 const lobbySlots = document.getElementById("lobbySlots");
+const titleLobbyStatus = document.getElementById("titleLobbyStatus");
 const playerStats = document.getElementById("playerStats");
 const statusText = document.getElementById("statusText");
 const castleState = document.getElementById("castleState");
@@ -57,22 +56,22 @@ const LOBBY_COLORS = [
   { id: "brown", label: "Brown", value: "#b98a68" },
 ];
 
+function createEmptyLobbyState() {
+  return Array.from({ length: 8 }, (_, index) => ({
+    type: "empty",
+    colorId: LOBBY_COLORS[index % LOBBY_COLORS.length].id,
+    handle: "",
+    clientId: null,
+  }));
+}
+
 const STATE = {
   mode: "title",
   keys: new Set(),
   game: null,
   mouseWorld: { x: WORLD.width / 2, y: WORLD.height / 2 },
   selectedTargetTeam: null,
-  lobby: [
-    { type: "player", colorId: "white" },
-    { type: "npc", colorId: "red" },
-    { type: "npc", colorId: "blue" },
-    { type: "empty", colorId: "green" },
-    { type: "empty", colorId: "yellow" },
-    { type: "empty", colorId: "orange" },
-    { type: "empty", colorId: "purple" },
-    { type: "empty", colorId: "pink" },
-  ],
+  lobby: createEmptyLobbyState(),
   touchMove: { active: false, pointerId: null, originX: 0, originY: 0, currentX: 0, currentY: 0 },
 };
 
@@ -101,11 +100,16 @@ let nextBasslineTime = 0;
 let network = {
   mode: "pve",
   socket: null,
+  clientId: null,
+  localSlotIndex: null,
+  lobbyConnected: false,
+  matchActive: false,
+  matchHostClientId: null,
   roomId: "",
   localTeam: 1,
   peerConnected: false,
   lastStatus: "",
-  remoteInput: { left: false, right: false, up: false, down: false, dash: false, deposit: false },
+  remoteInputs: {},
   lastSnapshotSentAt: 0,
 };
 
@@ -264,35 +268,55 @@ function connectSocket() {
   const socket = new WebSocket(`${protocol}//${window.location.host}`);
   network.socket = socket;
 
+  socket.addEventListener("open", () => {
+    network.lobbyConnected = true;
+    network.lastStatus = "Connected to shared lobby";
+    sendSocket({ type: "lobby_join" });
+    updateTitleLobbyUi();
+  });
+
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
-    if (message.type === "room_created") {
-      network.mode = "pvp-host";
-      network.localTeam = 1;
-      network.roomId = message.roomId;
-      network.peerConnected = false;
-      network.lastStatus = `Room ${message.roomId} waiting for player`;
-      startNetworkRound("host");
-    } else if (message.type === "room_joined") {
-      network.mode = "pvp-guest";
-      network.localTeam = 2;
-      network.roomId = message.roomId;
-      network.peerConnected = true;
-      network.lastStatus = `Joined room ${message.roomId}`;
-      startNetworkRound("guest");
-    } else if (message.type === "guest_joined") {
-      network.peerConnected = true;
-      network.lastStatus = `Room ${message.roomId} connected`;
-    } else if (message.type === "input" && network.mode === "pvp-host") {
-      network.remoteInput = message.input;
-    } else if (message.type === "snapshot" && network.mode === "pvp-guest") {
+    if (message.type === "lobby_sync") {
+      applyLobbySync(message.slots, message.clientId, message.localSlotIndex);
+      network.matchActive = Boolean(message.matchActive);
+      network.matchHostClientId = message.matchHostClientId ?? null;
+      network.lastStatus = message.localSlotIndex == null ? "Lobby full" : `Lobby slot ${message.localSlotIndex + 1}`;
+      updateTitleLobbyUi();
+    } else if (message.type === "lobby_error") {
+      network.lastStatus = message.message;
+      playErrorSound();
+      updateTitleLobbyUi();
+    } else if (message.type === "match_start") {
+      network.matchActive = true;
+      network.matchHostClientId = message.hostClientId ?? null;
+      startNetworkRound(message.hostClientId === network.clientId ? "host" : "client");
+      network.lastStatus = message.hostClientId === network.clientId ? "Hosting shared match" : "Joined shared match";
+    } else if (message.type === "match_end") {
+      network.matchActive = false;
+      network.matchHostClientId = null;
+      network.lastStatus = message.reason || "Match ended";
+      if (STATE.mode === "round") {
+        STATE.game = null;
+        STATE.mode = "title";
+        titleScreen.classList.remove("hidden");
+        hud.classList.add("hidden");
+      }
+      updateTitleLobbyUi();
+    } else if (message.type === "input" && network.mode === "match-host") {
+      network.remoteInputs[message.team] = message.input;
+    } else if (message.type === "snapshot" && network.mode === "match-client") {
       STATE.game = message.state;
-    } else if (message.type === "action" && network.mode === "pvp-host") {
+    } else if (message.type === "action" && network.mode === "match-host") {
       handleRemoteAction(message.action);
+    } else if (message.type === "player_left") {
+      network.lastStatus = `Player ${message.team} left`;
     } else if (message.type === "peer_left") {
       network.peerConnected = false;
-      network.lastStatus = "Peer disconnected";
-      network.remoteInput = { left: false, right: false, up: false, down: false, dash: false, deposit: false };
+      network.lastStatus = message.team ? `Player ${message.team} disconnected` : "Peer disconnected";
+      if (message.team != null) {
+        delete network.remoteInputs[message.team];
+      }
     } else if (message.type === "error") {
       network.lastStatus = message.message;
       playErrorSound();
@@ -302,6 +326,16 @@ function connectSocket() {
   socket.addEventListener("close", () => {
     if (network.socket === socket) {
       network.socket = null;
+    }
+    network.lobbyConnected = false;
+    if (network.mode === "title") {
+      network.lastStatus = "Shared lobby disconnected";
+      updateTitleLobbyUi();
+      window.setTimeout(() => {
+        if (STATE.mode === "title" && !network.socket) {
+          connectSocket();
+        }
+      }, 1200);
     }
     if (network.mode !== "pve") {
       network.peerConnected = false;
@@ -332,7 +366,10 @@ function collectNetworkInput() {
 }
 
 function startNetworkRound(role) {
-  STATE.game = spawnGame(role === "host" ? "pvp-host" : "pvp-guest");
+  STATE.game = spawnGame("shared-match");
+  network.mode = role === "host" ? "match-host" : "match-client";
+  network.remoteInputs = {};
+  network.localTeam = (network.localSlotIndex ?? 0) + 1;
   STATE.mode = "round";
   basslineStep = 0;
   const audio = getAudioContext();
@@ -440,20 +477,114 @@ function getColorById(colorId) {
   return LOBBY_COLORS.find((color) => color.id === colorId) ?? LOBBY_COLORS[0];
 }
 
+function sanitizeHandle(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 18);
+}
+
+function getLocalLobbySlot() {
+  if (network.localSlotIndex == null) {
+    return null;
+  }
+  return STATE.lobby[network.localSlotIndex] ?? null;
+}
+
+function syncHandleInputFromLobby() {
+  if (!handleInput) {
+    return;
+  }
+  const localSlot = getLocalLobbySlot();
+  handleInput.disabled = false;
+  if (document.activeElement !== handleInput) {
+    handleInput.value = localSlot?.handle ?? "";
+  }
+}
+
+function applyLobbySync(slots, localClientId, localSlotIndex = null) {
+  STATE.lobby = Array.isArray(slots)
+    ? slots.map((slot, index) => ({
+        type: slot?.type === "player" ? "player" : "empty",
+        colorId: getColorById(slot?.colorId ?? LOBBY_COLORS[index % LOBBY_COLORS.length].id).id,
+        handle: sanitizeHandle(slot?.handle),
+        clientId: slot?.clientId ?? null,
+      }))
+    : createEmptyLobbyState();
+
+  network.clientId = localClientId ?? network.clientId;
+  network.localSlotIndex = Number.isInteger(localSlotIndex) ? localSlotIndex : STATE.lobby.findIndex((slot) => slot.clientId === network.clientId);
+  network.localTeam = network.localSlotIndex != null && network.localSlotIndex >= 0 ? network.localSlotIndex + 1 : 1;
+  renderLobbySlots();
+  syncHandleInputFromLobby();
+  updateTitleLobbyUi();
+}
+
+function sendLobbyHandle() {
+  const handle = sanitizeHandle(handleInput?.value);
+  const localSlot = getLocalLobbySlot();
+  if (localSlot) {
+    localSlot.handle = handle;
+  }
+  if (network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected) {
+    sendSocket({ type: "lobby_handle", handle });
+  }
+}
+
+function sendLobbyColor(colorId) {
+  const localSlot = getLocalLobbySlot();
+  if (!localSlot) {
+    return;
+  }
+  localSlot.colorId = colorId;
+  renderLobbySlots();
+  if (network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected) {
+    sendSocket({ type: "lobby_color", colorId });
+  }
+}
+
+function updateTitleLobbyUi() {
+  const localSlot = getLocalLobbySlot();
+  const activePlayers = STATE.lobby.filter((slot) => slot.type === "player").length;
+  const connected = network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected;
+  let message = "Connecting to shared lobby...";
+  if (!connected) {
+    message = "Reconnecting to shared lobby...";
+  } else if (localSlot) {
+    message = `Shared lobby live. You are in slot ${network.localSlotIndex + 1}. ${activePlayers}/8 claimed.`;
+  } else if (activePlayers >= STATE.lobby.length) {
+    message = "Shared lobby is full right now.";
+  } else {
+    message = `Shared lobby live. Waiting to claim a slot... ${activePlayers}/8 claimed.`;
+  }
+  if (connected && network.matchActive) {
+    message = localSlot
+      ? `Match live. Slot ${network.localSlotIndex + 1} is in the round.`
+      : "Match live. Waiting for the next lobby reset.";
+  }
+  if (titleLobbyStatus) {
+    titleLobbyStatus.textContent = message;
+  }
+  if (quickFightButton) {
+    quickFightButton.disabled = !localSlot || !connected || network.matchActive;
+  }
+}
+
 function spawnGame(mode = "pve") {
   const spawnPoints = buildSpawnPoints(8);
   const players = [];
   const pads = [];
 
-  if (mode === "pve") {
+  if (mode === "pve" || mode === "shared-match") {
+    const localSlotIndex = network.localSlotIndex != null && network.localSlotIndex >= 0 ? network.localSlotIndex : 0;
     for (let i = 0; i < spawnPoints.length; i += 1) {
-      const slot = STATE.lobby[i] ?? { type: "empty", colorId: LOBBY_COLORS[i % LOBBY_COLORS.length].id };
+      const slot = STATE.lobby[i] ?? { type: "empty", colorId: LOBBY_COLORS[i % LOBBY_COLORS.length].id, handle: "" };
       if (slot.type === "empty") {
         continue;
       }
       const point = spawnPoints[i];
-      const controlType = i === 0 ? "local" : "idle";
+      const controlType = mode === "pve"
+        ? (i === localSlotIndex ? "local" : "idle")
+        : (i === localSlotIndex ? "local" : "remote");
       const color = getColorById(slot.colorId).value;
+      const fallbackName = `Player ${i + 1}`;
       players.push(createPlayer({
         id: `player-${i + 1}`,
         team: i + 1,
@@ -461,7 +592,7 @@ function spawnGame(mode = "pve") {
         y: point.y,
         isHuman: controlType === "local",
         controlType,
-        nickname: i === 0 ? "You" : `${slot.type === "npc" ? "NPC" : "Player"} ${i + 1}`,
+        nickname: sanitizeHandle(slot.handle) || fallbackName,
         color,
       }));
       pads.push(createCastlePad(i + 1, point.x + Math.cos(point.angle) * 750, point.y + Math.sin(point.angle) * 750));
@@ -604,68 +735,45 @@ function buildCrystals() {
 }
 
 function startQuickFight() {
-  network.mode = "pve";
-  network.localTeam = 1;
-  network.roomId = "";
-  network.peerConnected = false;
-  network.lastStatus = "";
-  STATE.game = spawnGame();
-  STATE.mode = "round";
-  basslineStep = 0;
-  const audio = getAudioContext();
-  nextBasslineTime = audio ? audio.currentTime + 0.08 : 0;
-  titleScreen.classList.add("hidden");
-  hud.classList.remove("hidden");
+  if (!network.lobbyConnected || getLocalLobbySlot() == null) {
+    network.lastStatus = "Wait for the shared lobby to assign you a slot.";
+    updateTitleLobbyUi();
+    playErrorSound();
+    return;
+  }
+  if (network.matchActive) {
+    network.lastStatus = "A shared match is already running.";
+    updateTitleLobbyUi();
+    playErrorSound();
+    return;
+  }
+  sendSocket({ type: "lobby_start" });
 }
 
 function resetToTitle() {
-  if (network.socket) {
-    try {
-      network.socket.close();
-    } catch {}
+  if (network.mode === "match-host" || network.mode === "match-client") {
+    sendSocket({ type: "match_end" });
   }
-  network.socket = null;
   network.mode = "pve";
   network.roomId = "";
   network.peerConnected = false;
   network.lastStatus = "";
-  network.remoteInput = { left: false, right: false, up: false, down: false, dash: false, deposit: false };
+  network.remoteInputs = {};
   STATE.game = null;
   STATE.mode = "title";
   basslineStep = 0;
   nextBasslineTime = 0;
   titleScreen.classList.remove("hidden");
   hud.classList.add("hidden");
+  connectSocket();
+  renderLobbySlots();
+  syncHandleInputFromLobby();
+  updateTitleLobbyUi();
 }
 
 quickFightButton.addEventListener("click", startQuickFight);
-hostPvpButton.addEventListener("click", () => {
-  const socket = connectSocket();
-  socket.addEventListener("open", function handleOpen() {
-    socket.removeEventListener("open", handleOpen);
-    sendSocket({ type: "host_room" });
-  }, { once: true });
-  if (socket.readyState === WebSocket.OPEN) {
-    sendSocket({ type: "host_room" });
-  }
-});
-joinPvpButton.addEventListener("click", () => {
-  const roomId = roomCodeInput.value.trim();
-  if (!roomId) {
-    network.lastStatus = "Enter a room code";
-    playErrorSound();
-    return;
-  }
-  const socket = connectSocket();
-  socket.addEventListener("open", function handleOpen() {
-    socket.removeEventListener("open", handleOpen);
-    sendSocket({ type: "join_room", roomId });
-  }, { once: true });
-  if (socket.readyState === WebSocket.OPEN) {
-    sendSocket({ type: "join_room", roomId });
-  }
-});
 resetFightButton.addEventListener("click", resetToTitle);
+handleInput?.addEventListener("input", sendLobbyHandle);
 spawnWarriorButton.addEventListener("click", spawnWarriorFromUi);
 attackWarriorButton.addEventListener("click", commandWarriorsFromUi);
 castleUpgradeButton.addEventListener("click", upgradeCastleDamageFromUi);
@@ -675,7 +783,7 @@ powerReserveButton.addEventListener("click", upgradeReserveFromUi);
 window.addEventListener("keydown", (event) => {
   unlockAudio();
   STATE.keys.add(event.code);
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     sendSocket({ type: "input", input: collectNetworkInput() });
   }
   if (event.code === "Escape" && STATE.mode === "round") {
@@ -685,7 +793,7 @@ window.addEventListener("keydown", (event) => {
 
 window.addEventListener("keyup", (event) => {
   STATE.keys.delete(event.code);
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     sendSocket({ type: "input", input: collectNetworkInput() });
   }
 });
@@ -714,7 +822,7 @@ window.addEventListener("pointermove", (event) => {
   if (STATE.touchMove.active && event.pointerId === STATE.touchMove.pointerId) {
     STATE.touchMove.currentX = event.clientX;
     STATE.touchMove.currentY = event.clientY;
-    if (network.mode === "pvp-guest") {
+    if (network.mode === "match-client") {
       sendSocket({ type: "input", input: collectNetworkInput() });
     }
   }
@@ -724,7 +832,7 @@ window.addEventListener("pointerup", (event) => {
   if (STATE.touchMove.active && event.pointerId === STATE.touchMove.pointerId) {
     STATE.touchMove.active = false;
     STATE.touchMove.pointerId = null;
-    if (network.mode === "pvp-guest") {
+    if (network.mode === "match-client") {
       sendSocket({ type: "input", input: collectNetworkInput() });
     }
   }
@@ -762,9 +870,9 @@ function renderLobbySlots() {
     return;
   }
   lobbySlots.innerHTML = "";
-  const choices = ["empty", "npc", "player"];
   for (let i = 0; i < 8; i += 1) {
-    const slotState = STATE.lobby[i];
+    const slotState = STATE.lobby[i] ?? createEmptyLobbyState()[i];
+    const isLocalSlot = slotState.clientId && slotState.clientId === network.clientId;
     const row = document.createElement("div");
     row.className = "lobby-slot";
 
@@ -789,38 +897,27 @@ function renderLobbySlots() {
       option.selected = slotState.colorId === color.id;
       colorSelect.appendChild(option);
     }
-    colorSelect.disabled = slotState.type === "empty";
+    colorSelect.disabled = !isLocalSlot;
     colorSelect.addEventListener("change", () => {
-      STATE.lobby[i].colorId = colorSelect.value;
-      renderLobbySlots();
+      sendLobbyColor(colorSelect.value);
     });
     row.appendChild(colorSelect);
 
     const controls = document.createElement("div");
     controls.className = "lobby-slot-controls";
-
-    for (const choice of choices) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "lobby-choice";
-      button.textContent = i === 0 && choice === "player" ? "You" : choice.toUpperCase();
-      if (slotState.type === choice) {
-        button.classList.add("active");
-      }
-      if (i === 0) {
-        if (choice !== "player") {
-          button.classList.add("locked");
-        } else {
-          button.classList.add("active", "locked");
-        }
-      } else {
-        button.addEventListener("click", () => {
-          STATE.lobby[i].type = choice;
-          renderLobbySlots();
-        });
-      }
-      controls.appendChild(button);
+    const status = document.createElement("div");
+    status.className = "lobby-status";
+    if (slotState.type === "empty") {
+      status.classList.add("empty");
+      status.textContent = "Empty";
+    } else if (isLocalSlot) {
+      status.classList.add("active");
+      status.textContent = sanitizeHandle(slotState.handle) || "You";
+    } else {
+      status.classList.add("remote");
+      status.textContent = sanitizeHandle(slotState.handle) || `Player ${i + 1}`;
     }
+    controls.appendChild(status);
 
     row.appendChild(controls);
     lobbySlots.appendChild(row);
@@ -869,7 +966,7 @@ function update(dt) {
 
   const game = STATE.game;
 
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     updateHud(game);
     updateBaseControls(game);
     return;
@@ -879,10 +976,12 @@ function update(dt) {
   game.tickTimer += dt;
   updateBassline();
 
-  if (network.mode === "pvp-host") {
-    const remotePlayer = game.players.find((player) => player.team === 2);
-    if (remotePlayer) {
-      remotePlayer.remoteInput = network.remoteInput;
+  if (network.mode === "match-host") {
+    for (const player of game.players) {
+      if (player.team === network.localTeam || player.dead) {
+        continue;
+      }
+      player.remoteInput = network.remoteInputs[player.team] ?? { left: false, right: false, up: false, down: false, dash: false, deposit: false };
     }
   }
 
@@ -913,7 +1012,7 @@ function update(dt) {
   updateCamera(game, dt);
   updateHud(game);
   updateBaseControls(game);
-  if (network.mode === "pvp-host") {
+  if (network.mode === "match-host") {
     const now = performance.now();
     if (now - network.lastSnapshotSentAt > 80) {
       network.lastSnapshotSentAt = now;
@@ -1113,7 +1212,7 @@ function selectTargetAtPoint(point) {
 }
 
 function spawnWarriorFromUi() {
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     sendSocket({ type: "action", action: { type: "spawn_warrior" } });
     return;
   }
@@ -1121,7 +1220,7 @@ function spawnWarriorFromUi() {
 }
 
 function commandWarriorsFromUi() {
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     sendSocket({ type: "action", action: { type: "attack_warriors", targetTeam: STATE.selectedTargetTeam } });
     return;
   }
@@ -1129,7 +1228,7 @@ function commandWarriorsFromUi() {
 }
 
 function upgradeCastleDamageFromUi() {
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     sendSocket({ type: "action", action: { type: "castle_upgrade" } });
     return;
   }
@@ -1137,7 +1236,7 @@ function upgradeCastleDamageFromUi() {
 }
 
 function upgradePowerplantFromUi() {
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     sendSocket({ type: "action", action: { type: "power_upgrade" } });
     return;
   }
@@ -1145,7 +1244,7 @@ function upgradePowerplantFromUi() {
 }
 
 function upgradeReserveFromUi() {
-  if (network.mode === "pvp-guest") {
+  if (network.mode === "match-client") {
     sendSocket({ type: "action", action: { type: "power_reserve" } });
     return;
   }
@@ -1156,16 +1255,20 @@ function handleRemoteAction(action) {
   if (!STATE.game) {
     return;
   }
+  const team = action.team;
+  if (team == null) {
+    return;
+  }
   if (action.type === "spawn_warrior") {
-    performSpawnWarriorForTeam(2);
+    performSpawnWarriorForTeam(team);
   } else if (action.type === "castle_upgrade") {
-    performCastleUpgradeForTeam(2);
+    performCastleUpgradeForTeam(team);
   } else if (action.type === "power_upgrade") {
-    performPowerUpgradeForTeam(2);
+    performPowerUpgradeForTeam(team);
   } else if (action.type === "power_reserve") {
-    performReserveUpgradeForTeam(2);
+    performReserveUpgradeForTeam(team);
   } else if (action.type === "attack_warriors") {
-    performWarriorAttackForTeam(2, action.targetTeam);
+    performWarriorAttackForTeam(team, action.targetTeam);
   }
 }
 
@@ -1665,12 +1768,12 @@ function updateHud(game) {
     statusText.textContent = `${game.winner} wins`;
     return;
   }
-  if (network.mode === "pvp-host") {
-    statusText.textContent = network.lastStatus || `Room ${network.roomId}`;
+  if (network.mode === "match-host") {
+    statusText.textContent = network.lastStatus || `Hosting shared match | Players ${game.players.filter((player) => !player.dead).length}`;
     return;
   }
-  if (network.mode === "pvp-guest") {
-    statusText.textContent = network.lastStatus || `Joined ${network.roomId}`;
+  if (network.mode === "match-client") {
+    statusText.textContent = network.lastStatus || `Shared match | Slot ${network.localTeam}`;
     return;
   }
   statusText.textContent = `Minions ${game.minions.length} | E deposit at castle, shield, or powerplant`;
@@ -2022,4 +2125,7 @@ function frame(now) {
 resizeCanvas();
 renderLobbySlots();
 applyResponsiveButtonLabels();
+syncHandleInputFromLobby();
+updateTitleLobbyUi();
+connectSocket();
 requestAnimationFrame(frame);

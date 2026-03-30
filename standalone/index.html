@@ -60,20 +60,17 @@
           <div class="title-main">
             <img class="title-art" src="/art/title_zork.png" alt="Zork">
             <div class="button-stack">
+              <input id="handleInput" class="room-code-input handle-input" type="text" maxlength="18" placeholder="Handle / Nickname">
               <button id="quickFightButton" class="menu-button">Quick Fight</button>
-              <button id="hostPvpButton" class="menu-button secondary">Host PvP</button>
-              <div class="pvp-join-row">
-                <input id="roomCodeInput" class="room-code-input" type="text" maxlength="4" placeholder="Room Code">
-                <button id="joinPvpButton" class="menu-button secondary join-button">Join PvP</button>
-              </div>
               <button id="resetFightButton" class="menu-button secondary">Reset Fight</button>
             </div>
-            <p class="screen-hint">Standalone browser rebuild for fast local iteration.</p>
+            <p id="titleLobbyStatus" class="screen-status">Connecting to shared lobby...</p>
+            <p class="screen-hint">Open the URL, claim an empty slot, pick a color, then enter the ring.</p>
           </div>
           <div class="lobby-panel">
             <div class="lobby-header">
               <h3>Lobby</h3>
-              <p>8 spawn areas. Choose `Player`, `NPC`, or `Empty`.</p>
+              <p>8 spawn areas. Visitors claim the next open slot and set their handle here.</p>
             </div>
             <div id="lobbySlots" class="lobby-slots"></div>
           </div>
