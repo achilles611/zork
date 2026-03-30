@@ -318,7 +318,7 @@ function connectSocket() {
     } else if (message.type === "input" && network.mode === "match-host") {
       network.remoteInputs[message.team] = message.input;
     } else if (message.type === "snapshot" && network.mode === "match-client") {
-      STATE.game = message.state;
+      applyRemoteSnapshot(message.state);
     } else if (message.type === "action" && network.mode === "match-host") {
       handleRemoteAction(message.action);
     } else if (message.type === "player_left") {
@@ -388,6 +388,27 @@ function startNetworkRound(role) {
   nextBasslineTime = audio ? audio.currentTime + 0.08 : 0;
   titleScreen.classList.add("hidden");
   hud.classList.remove("hidden");
+}
+
+function buildLocalCameraFromState(game) {
+  const localTeam = network.localTeam || 1;
+  const player = game?.players?.find((candidate) => candidate.team === localTeam && !candidate.dead)
+    ?? game?.players?.find((candidate) => candidate.team === localTeam)
+    ?? game?.players?.[0];
+  return {
+    x: player?.x ?? ARENA.x,
+    y: player?.y ?? ARENA.y,
+    zoom: game?.camera?.zoom ?? 1,
+  };
+}
+
+function applyRemoteSnapshot(state) {
+  const preservedCamera = STATE.game?.camera ? { ...STATE.game.camera } : null;
+  STATE.game = state;
+  if (!STATE.game) {
+    return;
+  }
+  STATE.game.camera = preservedCamera ?? buildLocalCameraFromState(STATE.game);
 }
 
 function serializeGameState(game) {
