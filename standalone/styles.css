@@ -299,8 +299,8 @@ body {
 
 .energy-hud {
   position: absolute;
-  top: 192px;
-  right: 12px;
+  top: 100px;
+  right: 244px;
   min-width: 220px;
   display: inline-flex;
   align-items: center;
@@ -330,7 +330,7 @@ body {
 
 .health-hud {
   position: absolute;
-  top: 192px;
+  top: 12px;
   right: 244px;
   width: 210px;
   padding: 10px 12px 11px;
@@ -748,7 +748,8 @@ body {
   }
 
   .energy-hud {
-    top: 144px;
+    top: 88px;
+    right: 194px;
     min-width: 170px;
     padding: 8px 10px;
     gap: 7px;
@@ -764,7 +765,7 @@ body {
   }
 
   .health-hud {
-    top: 144px;
+    top: 10px;
     right: 194px;
     width: 176px;
     padding: 8px 10px 9px;
@@ -787,7 +788,7 @@ body {
   }
 
   .target-panel {
-    top: 190px;
+    top: 134px;
   }
 
   .crystal-icon {
