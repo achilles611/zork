@@ -1382,6 +1382,7 @@ function performWarriorAttackForTeam(team, targetTeam) {
       continue;
     }
     minion.targetTeam = targetTeam;
+    minion.targetPlayerId = target.id;
     minion.dormant = false;
     issued += 1;
   }
@@ -1648,6 +1649,7 @@ function spawnWarrior(pad, game) {
     spinSpeed: 9,
     dormant: true,
     targetTeam: null,
+    targetPlayerId: null,
   });
   playMinionSpawnSound();
 }
@@ -1661,12 +1663,15 @@ function updateMinion(minion, dt, game) {
     confineToArena(minion, minion.radius + 8);
     return;
   }
-  const enemy = game.players.find((player) => player.team === minion.targetTeam && !player.dead);
+  const enemy = game.players.find((player) => player.id === minion.targetPlayerId && !player.dead)
+    ?? game.players.find((player) => player.team === minion.targetTeam && !player.dead);
   if (!enemy) {
     minion.dormant = true;
     minion.targetTeam = null;
+    minion.targetPlayerId = null;
     return;
   }
+  minion.targetPlayerId = enemy.id;
   const enemyPad = game.pads.find((pad) => pad.team === minion.targetTeam);
   if (enemyPad && hitsShield(minion, enemyPad)) {
     enemyPad.shieldHp = Math.max(0, enemyPad.shieldHp - 5);
