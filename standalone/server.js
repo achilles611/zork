@@ -13,9 +13,9 @@ const matchState = {
 const rootDir = __dirname;
 const parentDir = path.resolve(rootDir, "..");
 const lobbyColors = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "teal", "white", "brown"];
-const lobbySlots = Array.from({ length: 8 }, (_, index) => ({
+const lobbySlots = Array.from({ length: 8 }, () => ({
   type: "empty",
-  colorId: lobbyColors[index % lobbyColors.length],
+  colorId: null,
   handle: "",
   clientId: null,
 }));
@@ -71,6 +71,7 @@ function claimLobbySlot(socket) {
   lobbySlots[index] = {
     ...lobbySlots[index],
     type: "player",
+    colorId: lobbySlots[index].colorId ?? null,
     handle: "",
     clientId: socket.meta.clientId,
   };
@@ -86,6 +87,7 @@ function releaseLobbySlot(socket) {
   lobbySlots[index] = {
     ...lobbySlots[index],
     type: "empty",
+    colorId: null,
     handle: "",
     clientId: null,
   };

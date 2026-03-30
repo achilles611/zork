@@ -78,9 +78,9 @@ const LOBBY_COLORS = [
 ];
 
 function createEmptyLobbyState() {
-  return Array.from({ length: 8 }, (_, index) => ({
+  return Array.from({ length: 8 }, () => ({
     type: "empty",
-    colorId: LOBBY_COLORS[index % LOBBY_COLORS.length].id,
+    colorId: null,
     handle: "",
     clientId: null,
   }));
@@ -600,7 +600,7 @@ function applyLobbySync(slots, localClientId, localSlotIndex = null) {
   STATE.lobby = Array.isArray(slots)
     ? slots.map((slot, index) => ({
         type: slot?.type === "player" ? "player" : (slot?.type === "npc" ? "npc" : "empty"),
-        colorId: getColorById(slot?.colorId ?? LOBBY_COLORS[index % LOBBY_COLORS.length].id).id,
+        colorId: slot?.colorId ? getColorById(slot.colorId).id : null,
         handle: sanitizeHandle(slot?.handle),
         clientId: slot?.clientId ?? null,
       }))
@@ -626,6 +626,9 @@ function sendLobbyHandle() {
 }
 
 function sendLobbyColor(colorId) {
+  if (!colorId) {
+    return;
+  }
   const localSlot = getLocalLobbySlot();
   if (!localSlot) {
     return;
@@ -1019,7 +1022,7 @@ function renderLobbySlots() {
     const name = document.createElement("div");
     name.className = "lobby-slot-name";
     name.title = `Area ${i + 1}`;
-    name.style.background = getColorById(slotState.colorId).value;
+    name.style.background = slotState.colorId ? getColorById(slotState.colorId).value : "rgba(255,255,255,0.04)";
     row.appendChild(name);
 
     const colorSelect = document.createElement("select");
@@ -1029,6 +1032,12 @@ function renderLobbySlots() {
         .map((slot, slotIndex) => (slotIndex === i || slot.type === "empty" ? null : slot.colorId))
         .filter(Boolean),
     );
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Color";
+    placeholder.disabled = true;
+    placeholder.selected = !slotState.colorId;
+    colorSelect.appendChild(placeholder);
     for (const color of LOBBY_COLORS) {
       const option = document.createElement("option");
       option.value = color.id;
