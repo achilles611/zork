@@ -13,10 +13,12 @@ const statusText = document.getElementById("statusText");
 const targetList = document.getElementById("targetList");
 const castleState = document.getElementById("castleState");
 const powerplantState = document.getElementById("powerplantState");
+const shieldState = document.getElementById("shieldState");
 const spawnWarriorButton = document.getElementById("spawnWarriorButton");
 const castleUpgradeButton = document.getElementById("castleUpgradeButton");
 const powerUpgradeButton = document.getElementById("powerUpgradeButton");
 const powerReserveButton = document.getElementById("powerReserveButton");
+const shieldUpgradeButton = document.getElementById("shieldUpgradeButton");
 
 const CASTLE_DRAW = {
   bodyWidth: 180,
@@ -47,8 +49,8 @@ const BASE_LAYOUT = {
   castleFromPlayer: 920,
   shieldFromCastle: 1340,
   powerFromCastle: 1340,
-  shieldArcRadius: 360,
-  shieldArcThickness: 28,
+  shieldRadius: 1780,
+  shieldThickness: 36,
   dormantMinionOffset: 250,
 };
 
@@ -751,6 +753,7 @@ function createCastlePad(team, spawnPoint) {
     shieldBuilt: false,
     shieldHp: 0,
     maxShieldHp: 100,
+    shieldLevel: 0,
     powerBuilt: false,
     energyPerTick: 2,
     energyLevel: 0,
@@ -834,6 +837,7 @@ spawnWarriorButton.addEventListener("click", spawnWarriorFromUi);
 castleUpgradeButton.addEventListener("click", upgradeCastleDamageFromUi);
 powerUpgradeButton.addEventListener("click", upgradePowerplantFromUi);
 powerReserveButton.addEventListener("click", upgradeReserveFromUi);
+shieldUpgradeButton.addEventListener("click", upgradeShieldFromUi);
 
 window.addEventListener("keydown", (event) => {
   unlockAudio();
@@ -1327,6 +1331,14 @@ function upgradeReserveFromUi() {
   performReserveUpgradeForTeam(network.localTeam);
 }
 
+function upgradeShieldFromUi() {
+  if (network.mode === "match-client") {
+    sendSocket({ type: "action", action: { type: "shield_upgrade" } });
+    return;
+  }
+  performShieldUpgradeForTeam(network.localTeam);
+}
+
 function handleRemoteAction(action) {
   if (!STATE.game) {
     return;
@@ -1345,6 +1357,8 @@ function handleRemoteAction(action) {
     performReserveUpgradeForTeam(team);
   } else if (action.type === "attack_warriors") {
     performWarriorAttackForTeam(team, action.targetTeam);
+  } else if (action.type === "shield_upgrade") {
+    performShieldUpgradeForTeam(team);
   }
 }
 
@@ -1448,6 +1462,24 @@ function performReserveUpgradeForTeam(team) {
   playArmPickupSound();
 }
 
+function performShieldUpgradeForTeam(team) {
+  const game = STATE.game;
+  const pad = game?.pads.find((candidate) => candidate.team === team);
+  const player = game?.players.find((candidate) => candidate.team === team && !candidate.dead);
+  if (!game || !pad || !player || !pad.shieldBuilt || player.energy < 10) {
+    if (team === network.localTeam) {
+      flashUpgradeError(shieldUpgradeButton);
+    }
+    return;
+  }
+  player.energy -= 10;
+  pad.maxShieldHp += 10;
+  pad.shieldHp += 10;
+  pad.shieldLevel += 1;
+  spawnFloatingText(game, pad.x, pad.y - BASE_LAYOUT.shieldRadius - 90, `shield ${pad.shieldHp}`, COLORS.healing);
+  playArmPickupSound();
+}
+
 function applyTick(game) {
   for (const pad of game.pads) {
     if (!pad.powerBuilt) {
@@ -1464,22 +1496,15 @@ function applyTick(game) {
 }
 
 function getShieldData(pad) {
-  const shieldBox = getShieldBuildBox(pad);
-  const centerX = shieldBox.x + pad.inwardX * 260;
-  const centerY = shieldBox.y + pad.inwardY * 260;
-  const radius = BASE_LAYOUT.shieldArcRadius;
-  const thickness = BASE_LAYOUT.shieldArcThickness;
-  const arcHalfSpan = 1.22;
-  const facingAngle = pad.facingAngle;
+  const centerX = pad.x;
+  const centerY = pad.y;
+  const radius = BASE_LAYOUT.shieldRadius;
+  const thickness = BASE_LAYOUT.shieldThickness;
   return {
     centerX,
     centerY,
     radius,
     thickness,
-    startAngle: facingAngle - arcHalfSpan,
-    endAngle: facingAngle + arcHalfSpan,
-    facingAngle,
-    arcHalfSpan,
   };
 }
 
@@ -1498,9 +1523,7 @@ function hitsShield(minion, pad) {
   const dx = minion.x - shield.centerX;
   const dy = minion.y - shield.centerY;
   const dist = Math.hypot(dx, dy);
-  const angle = Math.atan2(dy, dx);
-  const arcDelta = Math.abs(normalizeAngle(angle - shield.facingAngle));
-  return arcDelta <= shield.arcHalfSpan && Math.abs(dist - shield.radius) <= shield.thickness + minion.radius;
+  return Math.abs(dist - shield.radius) <= shield.thickness + minion.radius;
 }
 
 function getArmSegments(player) {
@@ -1866,10 +1889,12 @@ function updateBaseControls(game) {
   if (!player || !pad) {
     castleState.textContent = "Unavailable";
     powerplantState.textContent = "Unavailable";
+    shieldState.textContent = "Unavailable";
     spawnWarriorButton.classList.add("is-unaffordable");
     castleUpgradeButton.classList.add("is-unaffordable");
     powerUpgradeButton.classList.add("is-unaffordable");
     powerReserveButton.classList.add("is-unaffordable");
+    shieldUpgradeButton.classList.add("is-unaffordable");
     updateTargetList(game, null);
     return;
   }
@@ -1882,11 +1907,15 @@ function updateBaseControls(game) {
   powerplantState.textContent = pad.powerBuilt
     ? `Built | Energy +${pad.energyPerTick} | Reserve ${player.maxEnergy}`
     : `Not built | ${pad.powerStoredEnergy}/${pad.powerRequiredEnergy}`;
+  shieldState.textContent = pad.shieldBuilt
+    ? `Built | HP ${Math.max(0, Math.ceil(pad.shieldHp))}/${Math.max(0, Math.ceil(pad.maxShieldHp))}`
+    : `Not built | ${pad.shieldStoredEnergy}/${pad.shieldRequiredEnergy}`;
 
   spawnWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4 || teamMinions >= 20);
   castleUpgradeButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4);
   powerUpgradeButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
   powerReserveButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
+  shieldUpgradeButton.classList.toggle("is-unaffordable", !pad.shieldBuilt || player.energy < 10);
   updateTargetList(game, player);
 }
 
@@ -2230,21 +2259,20 @@ function drawPads(game) {
       ctx.save();
       ctx.strokeStyle = pad.team === 1 ? "rgba(130, 224, 255, 0.82)" : "rgba(255, 205, 138, 0.82)";
       ctx.lineWidth = shield.thickness * 2;
-      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.arc(shield.centerX, shield.centerY, shield.radius, shield.startAngle, shield.endAngle);
+      ctx.arc(shield.centerX, shield.centerY, shield.radius, 0, Math.PI * 2);
       ctx.stroke();
 
       ctx.strokeStyle = "rgba(255,255,255,0.28)";
       ctx.lineWidth = 8;
       ctx.beginPath();
-      ctx.arc(shield.centerX, shield.centerY, shield.radius, shield.startAngle, shield.endAngle);
+      ctx.arc(shield.centerX, shield.centerY, shield.radius, 0, Math.PI * 2);
       ctx.stroke();
 
       ctx.fillStyle = "#eafcff";
       ctx.font = "30px Segoe UI";
       ctx.textAlign = "center";
-      ctx.fillText(`Shield ${Math.max(0, Math.ceil(pad.shieldHp))}`, pad.x, pad.y + pad.size + 54);
+      ctx.fillText(`Shield ${Math.max(0, Math.ceil(pad.shieldHp))}`, pad.x, pad.y - shield.radius - 52);
       ctx.restore();
     }
   }
