@@ -98,6 +98,7 @@ const COLORS = {
   orb: "#8cf881",
   crystal: "#3ad86f",
   crystalCore: "#b9ffd1",
+  freeze: "#7fc9ff",
   player: "#f2f6ff",
   enemy: "#ffd6a8",
   crack: "#6d1010",
@@ -277,6 +278,17 @@ function playErrorSound() {
   );
 }
 
+function playFreezeBlastSound() {
+  playSound(
+    [
+      { frequency: 720, frequencyEnd: 360, duration: 0.11, type: "triangle", volume: 1.15 },
+      { frequency: 1220, frequencyEnd: 460, duration: 0.16, type: "sine", volume: 0.42, gap: 0 },
+      { frequency: 310, frequencyEnd: 180, duration: 0.14, type: "triangle", volume: 0.78 },
+    ],
+    { volume: 0.07 },
+  );
+}
+
 function connectSocket() {
   if (network.socket && (network.socket.readyState === WebSocket.OPEN || network.socket.readyState === WebSocket.CONNECTING)) {
     return network.socket;
@@ -379,6 +391,7 @@ function collectNetworkInput() {
     down: STATE.keys.has("KeyS") || (STATE.touchMove.active && touchDy > 14),
     dash: STATE.keys.has("ShiftLeft"),
     deposit: STATE.keys.has("KeyE"),
+    freeze: STATE.keys.has("KeyF"),
   };
 }
 
@@ -437,6 +450,7 @@ function serializeGameState(game) {
       armWidth: player.armWidth,
       armFlashTimer: player.armFlashTimer,
       bodyFlashTimer: player.bodyFlashTimer,
+      freezeTimer: player.freezeTimer,
       dead: player.dead,
     })),
     orbs: game.orbs,
@@ -744,10 +758,13 @@ function createPlayer({ id, team, x, y, isHuman, nickname, color = COLORS.player
     armLength: 230,
     armWidth: 18,
     armDamageCooldown: new Map(),
-    remoteInput: { left: false, right: false, up: false, down: false, dash: false, deposit: false },
+    remoteInput: { left: false, right: false, up: false, down: false, dash: false, deposit: false, freeze: false },
     bodyHitCooldown: 0,
     armFlashTimer: 0,
     bodyFlashTimer: 0,
+    freezeTimer: 0,
+    freezeCooldown: 0,
+    freezePressedLast: false,
     dashCooldown: 0,
     dashTimer: 0,
     dead: false,
@@ -1092,7 +1109,7 @@ function update(dt) {
       if (player.team === network.localTeam || player.dead) {
         continue;
       }
-      player.remoteInput = network.remoteInputs[player.team] ?? { left: false, right: false, up: false, down: false, dash: false, deposit: false };
+      player.remoteInput = network.remoteInputs[player.team] ?? { left: false, right: false, up: false, down: false, dash: false, deposit: false, freeze: false };
     }
   }
 
@@ -1138,11 +1155,15 @@ function updatePlayer(player, dt, game) {
     return;
   }
 
-  player.rotation += player.spinSpeed * dt;
+  if (player.freezeTimer <= 0) {
+    player.rotation += player.spinSpeed * dt;
+  }
   player.bodyHitCooldown = Math.max(0, player.bodyHitCooldown - dt);
   player.dashCooldown = Math.max(0, player.dashCooldown - dt);
   player.armFlashTimer = Math.max(0, player.armFlashTimer - dt);
   player.bodyFlashTimer = Math.max(0, player.bodyFlashTimer - dt);
+  player.freezeTimer = Math.max(0, player.freezeTimer - dt);
+  player.freezeCooldown = Math.max(0, player.freezeCooldown - dt);
 
   for (const [key, value] of player.armDamageCooldown.entries()) {
     const next = value - dt;
@@ -1151,6 +1172,22 @@ function updatePlayer(player, dt, game) {
     } else {
       player.armDamageCooldown.set(key, next);
     }
+  }
+
+  const freezePressed = player.controlType === "local"
+    ? STATE.keys.has("KeyF")
+    : player.controlType === "remote"
+      ? Boolean(player.remoteInput.freeze)
+      : false;
+  if (freezePressed && !player.freezePressedLast) {
+    tryFreezeBurst(player, game);
+  }
+  player.freezePressedLast = freezePressed;
+
+  if (player.freezeTimer > 0) {
+    player.vx = 0;
+    player.vy = 0;
+    return;
   }
 
   if (player.controlType === "local") {
@@ -1196,6 +1233,40 @@ function updatePlayer(player, dt, game) {
   confineToArena(player, player.radius + 14);
 
   handlePlayerCombat(player, game);
+}
+
+function tryFreezeBurst(player, game) {
+  if (player.dead || player.freezeCooldown > 0 || player.energy < 10) {
+    if (player.energy < 10 && player.controlType === "local") {
+      playErrorSound();
+    }
+    return;
+  }
+
+  const victims = game.players.filter((candidate) => (
+    candidate.team !== player.team
+    && !candidate.dead
+    && Math.hypot(candidate.x - player.x, candidate.y - player.y) <= player.radius * 4
+  ));
+
+  if (!victims.length) {
+    if (player.controlType === "local") {
+      playErrorSound();
+    }
+    player.freezeCooldown = 0.2;
+    return;
+  }
+
+  player.energy -= 10;
+  player.freezeCooldown = 0.45;
+  playFreezeBlastSound();
+  spawnFloatingText(game, player.x, player.y - player.radius - 42, "freeze", COLORS.freeze);
+  for (const victim of victims) {
+    victim.freezeTimer = 3;
+    victim.vx = 0;
+    victim.vy = 0;
+    spawnFloatingText(game, victim.x, victim.y - victim.radius - 36, "frozen", COLORS.freeze);
+  }
 }
 
 function getHumanInput(inputState = collectNetworkInput()) {
@@ -2517,8 +2588,9 @@ function drawPlayers(game) {
     if (player.dead) {
       continue;
     }
-    const color = player.bodyFlashTimer > 0 ? COLORS.uiDanger : player.color;
-    const armColor = player.armFlashTimer > 0 ? COLORS.uiDanger : color;
+    const frozen = player.freezeTimer > 0;
+    const color = frozen ? COLORS.freeze : (player.bodyFlashTimer > 0 ? COLORS.uiDanger : player.color);
+    const armColor = frozen ? COLORS.freeze : (player.armFlashTimer > 0 ? COLORS.uiDanger : color);
     const segments = getArmSegments(player);
 
     for (let i = 0; i < segments.length; i += 1) {
