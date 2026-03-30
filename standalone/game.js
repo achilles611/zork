@@ -10,6 +10,9 @@ const lobbySlots = document.getElementById("lobbySlots");
 const titleLobbyStatus = document.getElementById("titleLobbyStatus");
 const playerStats = document.getElementById("playerStats");
 const statusText = document.getElementById("statusText");
+const energyReadout = document.getElementById("energyReadout");
+const healthReadout = document.getElementById("healthReadout");
+const healthBarFill = document.getElementById("healthBarFill");
 const targetList = document.getElementById("targetList");
 const castleState = document.getElementById("castleState");
 const powerplantState = document.getElementById("powerplantState");
@@ -436,9 +439,16 @@ function buildLocalCameraFromState(game) {
 
 function applyRemoteSnapshot(state) {
   const preservedCamera = STATE.game?.camera ? { ...STATE.game.camera } : null;
+  const previousLocalPlayer = STATE.game?.players?.find((candidate) => candidate.team === (network.localTeam || 1)) ?? null;
   STATE.game = state;
   if (!STATE.game) {
     return;
+  }
+  const nextLocalPlayer = STATE.game.players?.find((candidate) => candidate.team === (network.localTeam || 1)) ?? null;
+  if (previousLocalPlayer && nextLocalPlayer) {
+    nextLocalPlayer.x = lerp(previousLocalPlayer.x, nextLocalPlayer.x, 0.28);
+    nextLocalPlayer.y = lerp(previousLocalPlayer.y, nextLocalPlayer.y, 0.28);
+    nextLocalPlayer.rotation = lerp(previousLocalPlayer.rotation, nextLocalPlayer.rotation, 0.35);
   }
   STATE.game.camera = preservedCamera ?? buildLocalCameraFromState(STATE.game);
 }
@@ -2154,7 +2164,10 @@ function spawnFloatingText(game, x, y, text, color = COLORS.damage) {
 }
 
 function updateCamera(game, dt) {
-  const player = getHumanPlayer() ?? game.players[0];
+  const localTeam = network.localTeam || 1;
+  const player = game.players.find((candidate) => candidate.team === localTeam && !candidate.dead)
+    ?? game.players.find((candidate) => candidate.team === localTeam)
+    ?? game.players[0];
   if (!player) {
     return;
   }
@@ -2171,12 +2184,33 @@ function updateHud(game) {
   const player = getHumanPlayer();
   if (!player) {
     playerStats.textContent = "Defeated";
+    if (energyReadout) {
+      energyReadout.textContent = "ENERGY 0/0";
+    }
+    if (healthReadout) {
+      healthReadout.textContent = "0/0";
+    }
+    if (healthBarFill) {
+      healthBarFill.style.transform = "scaleX(0)";
+      healthBarFill.style.filter = "saturate(0.6)";
+    }
     return;
   }
   const pad = game.pads.find((candidate) => candidate.team === player.team);
   const shieldText = pad?.shieldBuilt ? ` | Shield ${Math.max(0, Math.ceil(pad.shieldHp))}` : "";
   const powerText = pad?.powerBuilt ? ` | Plant +${pad.energyPerTick}` : "";
   playerStats.textContent = `HP ${Math.max(0, Math.ceil(player.bodyHp))} | EN ${player.energy}/${player.maxEnergy} | Arms ${player.arms.length}${shieldText}${powerText}`;
+  if (energyReadout) {
+    energyReadout.textContent = `ENERGY ${player.energy}/${player.maxEnergy}`;
+  }
+  if (healthReadout) {
+    healthReadout.textContent = `${Math.max(0, Math.ceil(player.bodyHp))}/${player.maxBodyHp}`;
+  }
+  if (healthBarFill) {
+    const hpRatio = clamp(player.bodyHp / Math.max(player.maxBodyHp, 1), 0, 1);
+    healthBarFill.style.transform = `scaleX(${hpRatio})`;
+    healthBarFill.style.filter = hpRatio < 0.34 ? "saturate(1.2) brightness(1.08)" : "none";
+  }
   if (game.winner) {
     statusText.textContent = `${game.winner} wins`;
     return;
@@ -2395,6 +2429,24 @@ function drawMinimap(game) {
   ctx.lineTo(centerX, centerY + radius);
   ctx.stroke();
 
+  for (const pad of game.pads) {
+    const owner = game.players.find((player) => player.team === pad.team);
+    const dx = (pad.x - ARENA.x) / ARENA.radius;
+    const dy = (pad.y - ARENA.y) / ARENA.radius;
+    const px = centerX + dx * radius;
+    const py = centerY + dy * radius;
+    const dotRadius = 3.8 * window.devicePixelRatio;
+    ctx.fillStyle = owner?.color ?? COLORS.player;
+    ctx.beginPath();
+    ctx.arc(px, py, dotRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1.2 * window.devicePixelRatio;
+    ctx.beginPath();
+    ctx.arc(px, py, dotRadius + 1.8 * window.devicePixelRatio, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   for (const crystal of game.crystals) {
     if (!crystal.active) {
       continue;
@@ -2493,6 +2545,7 @@ function drawPads(game) {
     const shield = getShieldData(pad);
     const shieldBox = getShieldBuildBox(pad);
     const powerBox = getPowerBuildBox(pad);
+    const owner = game.players.find((player) => player.team === pad.team);
     ctx.save();
     ctx.translate(pad.x, pad.y);
     ctx.fillStyle = "rgba(255,255,255,0.08)";
@@ -2536,6 +2589,15 @@ function drawPads(game) {
     ctx.font = "42px Segoe UI";
     ctx.textAlign = "center";
     ctx.fillText(`${pad.storedEnergy}/${pad.requiredEnergy}`, 0, -pad.size - 26);
+    ctx.fillStyle = owner?.color ?? COLORS.player;
+    ctx.beginPath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.82)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 36, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
 
     ctx.save();

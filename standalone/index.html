@@ -18,6 +18,19 @@
       <div class="hud-row">
         <div class="pill help-pill">WASD move, Shift dash, E deposit on your pad</div>
       </div>
+      <div id="energyHud" class="energy-hud">
+        <span class="crystal-icon energy-icon" aria-hidden="true"></span>
+        <span id="energyReadout" class="energy-readout">ENERGY 20/20</span>
+      </div>
+      <div id="healthHud" class="health-hud">
+        <div class="health-hud-header">
+          <span class="health-label">HP</span>
+          <span id="healthReadout" class="health-readout">100/100</span>
+        </div>
+        <div class="health-bar-shell">
+          <div id="healthBarFill" class="health-bar-fill"></div>
+        </div>
+      </div>
       <div id="targetPanel" class="target-panel">
         <div class="target-panel-title">Targets</div>
         <div id="targetList" class="target-list"></div>
