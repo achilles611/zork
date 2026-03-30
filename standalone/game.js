@@ -10,10 +10,10 @@ const lobbySlots = document.getElementById("lobbySlots");
 const titleLobbyStatus = document.getElementById("titleLobbyStatus");
 const playerStats = document.getElementById("playerStats");
 const statusText = document.getElementById("statusText");
+const targetList = document.getElementById("targetList");
 const castleState = document.getElementById("castleState");
 const powerplantState = document.getElementById("powerplantState");
 const spawnWarriorButton = document.getElementById("spawnWarriorButton");
-const attackWarriorButton = document.getElementById("attackWarriorButton");
 const castleUpgradeButton = document.getElementById("castleUpgradeButton");
 const powerUpgradeButton = document.getElementById("powerUpgradeButton");
 const powerReserveButton = document.getElementById("powerReserveButton");
@@ -827,7 +827,6 @@ quickFightButton.addEventListener("click", startQuickFight);
 resetFightButton.addEventListener("click", resetToTitle);
 handleInput?.addEventListener("input", sendLobbyHandle);
 spawnWarriorButton.addEventListener("click", spawnWarriorFromUi);
-attackWarriorButton.addEventListener("click", commandWarriorsFromUi);
 castleUpgradeButton.addEventListener("click", upgradeCastleDamageFromUi);
 powerUpgradeButton.addEventListener("click", upgradePowerplantFromUi);
 powerReserveButton.addEventListener("click", upgradeReserveFromUi);
@@ -1279,20 +1278,21 @@ function selectTargetAtPoint(point) {
   STATE.selectedTargetTeam = target?.team ?? null;
 }
 
+function issueAttackTarget(targetTeam) {
+  STATE.selectedTargetTeam = targetTeam;
+  if (network.mode === "match-client") {
+    sendSocket({ type: "action", action: { type: "attack_warriors", targetTeam } });
+    return;
+  }
+  performWarriorAttackForTeam(network.localTeam, targetTeam);
+}
+
 function spawnWarriorFromUi() {
   if (network.mode === "match-client") {
     sendSocket({ type: "action", action: { type: "spawn_warrior" } });
     return;
   }
   performSpawnWarriorForTeam(network.localTeam);
-}
-
-function commandWarriorsFromUi() {
-  if (network.mode === "match-client") {
-    sendSocket({ type: "action", action: { type: "attack_warriors", targetTeam: STATE.selectedTargetTeam } });
-    return;
-  }
-  performWarriorAttackForTeam(network.localTeam, STATE.selectedTargetTeam);
 }
 
 function upgradeCastleDamageFromUi() {
@@ -1364,7 +1364,7 @@ function performWarriorAttackForTeam(team, targetTeam) {
   const target = game?.players.find((candidate) => candidate.team === targetTeam && !candidate.dead);
   if (!game || !attacker || !target || attacker.team === target.team) {
     if (team === network.localTeam) {
-      flashUpgradeError(attackWarriorButton);
+      playErrorSound();
     }
     return;
   }
@@ -1378,7 +1378,7 @@ function performWarriorAttackForTeam(team, targetTeam) {
     issued += 1;
   }
   if (!issued && team === network.localTeam) {
-    flashUpgradeError(attackWarriorButton);
+    playErrorSound();
     return;
   }
   if (team === network.localTeam) {
@@ -1854,9 +1854,10 @@ function updateBaseControls(game) {
     castleState.textContent = "Unavailable";
     powerplantState.textContent = "Unavailable";
     spawnWarriorButton.classList.add("is-unaffordable");
-    attackWarriorButton.classList.add("is-unaffordable");
     castleUpgradeButton.classList.add("is-unaffordable");
     powerUpgradeButton.classList.add("is-unaffordable");
+    powerReserveButton.classList.add("is-unaffordable");
+    updateTargetList(game, null);
     return;
   }
 
@@ -1870,10 +1871,57 @@ function updateBaseControls(game) {
     : `Not built | ${pad.powerStoredEnergy}/${pad.powerRequiredEnergy}`;
 
   spawnWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4 || teamMinions >= 20);
-  attackWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || !target || teamMinions <= 0);
   castleUpgradeButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4);
   powerUpgradeButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
   powerReserveButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
+  updateTargetList(game, player);
+}
+
+function updateTargetList(game, localPlayer) {
+  if (!targetList) {
+    return;
+  }
+  targetList.innerHTML = "";
+  if (!game || !localPlayer) {
+    const empty = document.createElement("div");
+    empty.className = "target-empty";
+    empty.textContent = "No targets";
+    targetList.appendChild(empty);
+    return;
+  }
+
+  const localPad = game.pads.find((candidate) => candidate.team === localPlayer.team);
+  const teamMinions = getTeamMinionCount(game, localPlayer.team);
+  const enemies = game.players.filter((candidate) => candidate.team !== localPlayer.team && !candidate.dead);
+  if (!enemies.length) {
+    const empty = document.createElement("div");
+    empty.className = "target-empty";
+    empty.textContent = "No enemy players";
+    targetList.appendChild(empty);
+    return;
+  }
+
+  for (const enemy of enemies) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "target-entry";
+    if (STATE.selectedTargetTeam === enemy.team) {
+      button.classList.add("active");
+    }
+    button.disabled = !localPad?.castleBuilt || teamMinions <= 0;
+    button.addEventListener("click", () => issueAttackTarget(enemy.team));
+
+    const swatch = document.createElement("span");
+    swatch.className = "target-swatch";
+    swatch.style.background = enemy.color;
+    button.appendChild(swatch);
+
+    const label = document.createElement("span");
+    label.textContent = enemy.nickname;
+    button.appendChild(label);
+
+    targetList.appendChild(button);
+  }
 }
 
 function checkRoundEnd(game) {
@@ -1890,6 +1938,7 @@ function draw() {
     return;
   }
   drawArena(STATE.game);
+  drawMinimap(STATE.game);
 }
 
 function drawBackground() {
@@ -1943,6 +1992,97 @@ function drawArena(game) {
   drawFloatingText(game);
 
   ctx.restore();
+}
+
+function drawMinimap(game) {
+  const mobile = window.innerWidth <= 900;
+  const size = mobile ? 132 * window.devicePixelRatio : 176 * window.devicePixelRatio;
+  const margin = mobile ? 10 * window.devicePixelRatio : 14 * window.devicePixelRatio;
+  const x = canvas.width - size - margin;
+  const y = margin;
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  const radius = size * 0.42;
+
+  ctx.save();
+
+  ctx.fillStyle = "rgba(8, 12, 18, 0.82)";
+  ctx.strokeStyle = "rgba(141, 225, 255, 0.24)";
+  ctx.lineWidth = 2 * window.devicePixelRatio;
+  roundRectPath(x, y, size, size, 18 * window.devicePixelRatio);
+  ctx.fill();
+  ctx.stroke();
+
+  const radarGradient = ctx.createRadialGradient(centerX, centerY, radius * 0.16, centerX, centerY, radius);
+  radarGradient.addColorStop(0, "rgba(38, 90, 168, 0.24)");
+  radarGradient.addColorStop(1, "rgba(4, 10, 20, 0.02)");
+  ctx.fillStyle = radarGradient;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(154, 214, 255, 0.3)";
+  ctx.lineWidth = 1.5 * window.devicePixelRatio;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius * 0.66, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(centerX - radius, centerY);
+  ctx.lineTo(centerX + radius, centerY);
+  ctx.moveTo(centerX, centerY - radius);
+  ctx.lineTo(centerX, centerY + radius);
+  ctx.stroke();
+
+  const localPlayer = getHumanPlayer();
+  for (const player of game.players) {
+    if (player.dead) {
+      continue;
+    }
+    const dx = (player.x - ARENA.x) / ARENA.radius;
+    const dy = (player.y - ARENA.y) / ARENA.radius;
+    const px = centerX + dx * radius;
+    const py = centerY + dy * radius;
+    const dotRadius = (player === localPlayer ? 5.5 : 4) * window.devicePixelRatio;
+
+    ctx.fillStyle = player.bodyFlashTimer > 0 ? COLORS.uiDanger : player.color;
+    ctx.beginPath();
+    ctx.arc(px, py, dotRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (player === localPlayer) {
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.lineWidth = 1.5 * window.devicePixelRatio;
+      ctx.beginPath();
+      ctx.arc(px, py, dotRadius + 3 * window.devicePixelRatio, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  ctx.fillStyle = "rgba(244, 246, 251, 0.88)";
+  ctx.font = `${11 * window.devicePixelRatio}px Segoe UI`;
+  ctx.textAlign = "left";
+  ctx.fillText("MINIMAP", x + 10 * window.devicePixelRatio, y + 16 * window.devicePixelRatio);
+
+  ctx.restore();
+}
+
+function roundRectPath(x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
 }
 
 function drawPads(game) {
