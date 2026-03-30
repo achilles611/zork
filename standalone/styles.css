@@ -446,6 +446,13 @@ body {
   min-width: 0;
 }
 
+.heart-store-icon {
+  color: #ff6785;
+  font-size: 16px;
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(255, 107, 133, 0.4);
+}
+
 .button-cost {
   display: inline-flex;
   align-items: center;
@@ -650,6 +657,10 @@ body {
     font-size: 10px;
     gap: 4px;
     padding-left: 6px;
+  }
+
+  .heart-store-icon {
+    font-size: 14px;
   }
 
   .crystal-icon {

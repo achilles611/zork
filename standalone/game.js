@@ -19,6 +19,7 @@ const castleUpgradeButton = document.getElementById("castleUpgradeButton");
 const powerUpgradeButton = document.getElementById("powerUpgradeButton");
 const powerReserveButton = document.getElementById("powerReserveButton");
 const shieldUpgradeButton = document.getElementById("shieldUpgradeButton");
+const shieldHeartButton = document.getElementById("shieldHeartButton");
 
 const CASTLE_DRAW = {
   bodyWidth: 180,
@@ -99,6 +100,7 @@ const COLORS = {
   crystal: "#3ad86f",
   crystalCore: "#b9ffd1",
   freeze: "#7fc9ff",
+  heart: "#ff7f99",
   player: "#f2f6ff",
   enemy: "#ffd6a8",
   crack: "#6d1010",
@@ -289,6 +291,18 @@ function playFreezeBlastSound() {
   );
 }
 
+function playHeartHealSound() {
+  playSound(
+    [
+      { frequency: 392, duration: 0.06, type: "triangle", volume: 0.9 },
+      { frequency: 523.25, duration: 0.08, type: "triangle", volume: 1.05 },
+      { frequency: 659.25, duration: 0.1, type: "sine", volume: 1.1 },
+      { frequency: 783.99, duration: 0.18, type: "sine", volume: 0.9 },
+    ],
+    { volume: 0.08 },
+  );
+}
+
 function connectSocket() {
   if (network.socket && (network.socket.readyState === WebSocket.OPEN || network.socket.readyState === WebSocket.CONNECTING)) {
     return network.socket;
@@ -450,6 +464,7 @@ function serializeGameState(game) {
       armWidth: player.armWidth,
       armFlashTimer: player.armFlashTimer,
       bodyFlashTimer: player.bodyFlashTimer,
+      heartFlashTimer: player.heartFlashTimer,
       freezeTimer: player.freezeTimer,
       dead: player.dead,
     })),
@@ -762,6 +777,7 @@ function createPlayer({ id, team, x, y, isHuman, nickname, color = COLORS.player
     bodyHitCooldown: 0,
     armFlashTimer: 0,
     bodyFlashTimer: 0,
+    heartFlashTimer: 0,
     freezeTimer: 0,
     freezeCooldown: 0,
     freezePressedLast: false,
@@ -891,6 +907,7 @@ castleUpgradeButton.addEventListener("click", upgradeCastleDamageFromUi);
 powerUpgradeButton.addEventListener("click", upgradePowerplantFromUi);
 powerReserveButton.addEventListener("click", upgradeReserveFromUi);
 shieldUpgradeButton.addEventListener("click", upgradeShieldFromUi);
+shieldHeartButton.addEventListener("click", buyShieldHeartFromUi);
 
 window.addEventListener("keydown", (event) => {
   unlockAudio();
@@ -1162,6 +1179,7 @@ function updatePlayer(player, dt, game) {
   player.dashCooldown = Math.max(0, player.dashCooldown - dt);
   player.armFlashTimer = Math.max(0, player.armFlashTimer - dt);
   player.bodyFlashTimer = Math.max(0, player.bodyFlashTimer - dt);
+  player.heartFlashTimer = Math.max(0, player.heartFlashTimer - dt);
   player.freezeTimer = Math.max(0, player.freezeTimer - dt);
   player.freezeCooldown = Math.max(0, player.freezeCooldown - dt);
 
@@ -1597,6 +1615,14 @@ function upgradeShieldFromUi() {
   performShieldUpgradeForTeam(network.localTeam);
 }
 
+function buyShieldHeartFromUi() {
+  if (network.mode === "match-client") {
+    sendSocket({ type: "action", action: { type: "shield_heart" } });
+    return;
+  }
+  performShieldHeartForTeam(network.localTeam);
+}
+
 function handleRemoteAction(action) {
   if (!STATE.game) {
     return;
@@ -1617,6 +1643,8 @@ function handleRemoteAction(action) {
     performWarriorAttackForTeam(team, action.targetTeam);
   } else if (action.type === "shield_upgrade") {
     performShieldUpgradeForTeam(team);
+  } else if (action.type === "shield_heart") {
+    performShieldHeartForTeam(team);
   }
 }
 
@@ -1736,6 +1764,29 @@ function performShieldUpgradeForTeam(team) {
   pad.shieldLevel += 1;
   spawnFloatingText(game, pad.x, pad.y - BASE_LAYOUT.shieldRadius - 90, `shield ${pad.shieldHp}`, COLORS.healing);
   playArmPickupSound();
+}
+
+function performShieldHeartForTeam(team) {
+  const game = STATE.game;
+  const pad = game?.pads.find((candidate) => candidate.team === team);
+  const player = game?.players.find((candidate) => candidate.team === team && !candidate.dead);
+  if (!game || !pad || !player || !pad.shieldBuilt || player.energy < 15) {
+    if (team === network.localTeam) {
+      flashUpgradeError(shieldHeartButton);
+    }
+    return;
+  }
+  player.energy -= 15;
+  player.bodyHp = player.maxBodyHp;
+  player.heartFlashTimer = 0.28;
+  player.bodyFlashTimer = 0;
+  player.armFlashTimer = 0;
+  for (const arm of player.arms) {
+    arm.hp = arm.maxHp;
+    arm.crack = false;
+  }
+  spawnFloatingText(game, player.x, player.y - player.radius - 46, "full heal", COLORS.heart);
+  playHeartHealSound();
 }
 
 function applyTick(game) {
@@ -2153,6 +2204,7 @@ function updateBaseControls(game) {
     powerUpgradeButton.classList.add("is-unaffordable");
     powerReserveButton.classList.add("is-unaffordable");
     shieldUpgradeButton.classList.add("is-unaffordable");
+    shieldHeartButton.classList.add("is-unaffordable");
     updateTargetList(game, null);
     return;
   }
@@ -2174,6 +2226,7 @@ function updateBaseControls(game) {
   powerUpgradeButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
   powerReserveButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
   shieldUpgradeButton.classList.toggle("is-unaffordable", !pad.shieldBuilt || player.energy < 10);
+  shieldHeartButton.classList.toggle("is-unaffordable", !pad.shieldBuilt || player.energy < 15);
   updateTargetList(game, player);
 }
 
@@ -2393,7 +2446,13 @@ function drawMinimap(game) {
     const py = centerY + dy * radius;
     const dotRadius = (player === localPlayer ? 5.5 : 4) * window.devicePixelRatio;
 
-    ctx.fillStyle = player.bodyFlashTimer > 0 ? COLORS.uiDanger : player.color;
+    ctx.fillStyle = player.freezeTimer > 0
+      ? COLORS.freeze
+      : player.heartFlashTimer > 0
+        ? COLORS.heart
+        : player.bodyFlashTimer > 0
+          ? COLORS.uiDanger
+          : player.color;
     ctx.beginPath();
     ctx.arc(px, py, dotRadius, 0, Math.PI * 2);
     ctx.fill();
@@ -2589,8 +2648,17 @@ function drawPlayers(game) {
       continue;
     }
     const frozen = player.freezeTimer > 0;
-    const color = frozen ? COLORS.freeze : (player.bodyFlashTimer > 0 ? COLORS.uiDanger : player.color);
-    const armColor = frozen ? COLORS.freeze : (player.armFlashTimer > 0 ? COLORS.uiDanger : color);
+    const heartFlashing = player.heartFlashTimer > 0;
+    const color = frozen
+      ? COLORS.freeze
+      : heartFlashing
+        ? COLORS.heart
+        : (player.bodyFlashTimer > 0 ? COLORS.uiDanger : player.color);
+    const armColor = frozen
+      ? COLORS.freeze
+      : heartFlashing
+        ? COLORS.heart
+        : (player.armFlashTimer > 0 ? COLORS.uiDanger : color);
     const segments = getArmSegments(player);
 
     for (let i = 0; i < segments.length; i += 1) {
