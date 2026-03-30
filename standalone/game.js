@@ -2055,6 +2055,46 @@ function drawMinimap(game) {
   ctx.lineTo(centerX, centerY + radius);
   ctx.stroke();
 
+  for (const crystal of game.crystals) {
+    if (!crystal.active) {
+      continue;
+    }
+    const dx = (crystal.x - ARENA.x) / ARENA.radius;
+    const dy = (crystal.y - ARENA.y) / ARENA.radius;
+    const px = centerX + dx * radius;
+    const py = centerY + dy * radius;
+    const crystalRadius = 3.2 * window.devicePixelRatio;
+
+    ctx.fillStyle = COLORS.crystal;
+    ctx.beginPath();
+    ctx.moveTo(px, py - crystalRadius * 1.4);
+    ctx.lineTo(px + crystalRadius, py);
+    ctx.lineTo(px + crystalRadius * 0.55, py + crystalRadius * 1.3);
+    ctx.lineTo(px - crystalRadius * 0.55, py + crystalRadius * 1.3);
+    ctx.lineTo(px - crystalRadius, py);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  for (const minion of game.minions) {
+    if (minion.dead) {
+      continue;
+    }
+    const dx = (minion.x - ARENA.x) / ARENA.radius;
+    const dy = (minion.y - ARENA.y) / ARENA.radius;
+    const px = centerX + dx * radius;
+    const py = centerY + dy * radius;
+    const sizeUnit = 3.4 * window.devicePixelRatio;
+
+    ctx.fillStyle = minion.team === network.localTeam ? COLORS.minion : COLORS.minionEnemy;
+    ctx.beginPath();
+    ctx.moveTo(px, py - sizeUnit * 1.15);
+    ctx.lineTo(px + sizeUnit, py + sizeUnit * 0.85);
+    ctx.lineTo(px - sizeUnit, py + sizeUnit * 0.85);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   const localPlayer = getHumanPlayer();
   for (const player of game.players) {
     if (player.dead) {
