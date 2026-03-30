@@ -77,6 +77,8 @@ let network = {
   socket: null,
   roomId: "",
   localTeam: 1,
+  peerConnected: false,
+  lastStatus: "",
   remoteInput: { left: false, right: false, up: false, down: false, dash: false, deposit: false },
   lastSnapshotSentAt: 0,
 };
@@ -242,16 +244,19 @@ function connectSocket() {
       network.mode = "pvp-host";
       network.localTeam = 1;
       network.roomId = message.roomId;
+      network.peerConnected = false;
+      network.lastStatus = `Room ${message.roomId} waiting for player`;
       startNetworkRound("host");
-      statusText.textContent = `Hosting PvP room ${message.roomId}`;
     } else if (message.type === "room_joined") {
       network.mode = "pvp-guest";
       network.localTeam = 2;
       network.roomId = message.roomId;
+      network.peerConnected = true;
+      network.lastStatus = `Joined room ${message.roomId}`;
       startNetworkRound("guest");
-      statusText.textContent = `Joined PvP room ${message.roomId}`;
     } else if (message.type === "guest_joined") {
-      statusText.textContent = `Guest joined room ${message.roomId}`;
+      network.peerConnected = true;
+      network.lastStatus = `Room ${message.roomId} connected`;
     } else if (message.type === "input" && network.mode === "pvp-host") {
       network.remoteInput = message.input;
     } else if (message.type === "snapshot" && network.mode === "pvp-guest") {
@@ -259,10 +264,11 @@ function connectSocket() {
     } else if (message.type === "action" && network.mode === "pvp-host") {
       handleRemoteAction(message.action);
     } else if (message.type === "peer_left") {
-      statusText.textContent = "Peer disconnected";
+      network.peerConnected = false;
+      network.lastStatus = "Peer disconnected";
       network.remoteInput = { left: false, right: false, up: false, down: false, dash: false, deposit: false };
     } else if (message.type === "error") {
-      statusText.textContent = message.message;
+      network.lastStatus = message.message;
       playErrorSound();
     }
   });
@@ -270,6 +276,10 @@ function connectSocket() {
   socket.addEventListener("close", () => {
     if (network.socket === socket) {
       network.socket = null;
+    }
+    if (network.mode !== "pve") {
+      network.peerConnected = false;
+      network.lastStatus = "Disconnected";
     }
   });
 
@@ -519,6 +529,8 @@ function startQuickFight() {
   network.mode = "pve";
   network.localTeam = 1;
   network.roomId = "";
+  network.peerConnected = false;
+  network.lastStatus = "";
   STATE.game = spawnGame();
   STATE.mode = "round";
   basslineStep = 0;
@@ -529,6 +541,17 @@ function startQuickFight() {
 }
 
 function resetToTitle() {
+  if (network.socket) {
+    try {
+      network.socket.close();
+    } catch {}
+  }
+  network.socket = null;
+  network.mode = "pve";
+  network.roomId = "";
+  network.peerConnected = false;
+  network.lastStatus = "";
+  network.remoteInput = { left: false, right: false, up: false, down: false, dash: false, deposit: false };
   STATE.game = null;
   STATE.mode = "title";
   basslineStep = 0;
@@ -551,7 +574,7 @@ hostPvpButton.addEventListener("click", () => {
 joinPvpButton.addEventListener("click", () => {
   const roomId = roomCodeInput.value.trim();
   if (!roomId) {
-    statusText.textContent = "Enter a room code";
+    network.lastStatus = "Enter a room code";
     playErrorSound();
     return;
   }
@@ -1368,7 +1391,19 @@ function updateHud(game) {
   const shieldText = pad?.shieldBuilt ? ` | Shield ${Math.max(0, Math.ceil(pad.shieldHp))}` : "";
   const powerText = pad?.powerBuilt ? ` | Plant +${pad.energyPerTick}` : "";
   playerStats.textContent = `HP ${Math.max(0, Math.ceil(player.bodyHp))} | EN ${player.energy}/${player.maxEnergy} | Arms ${player.arms.length}${shieldText}${powerText}`;
-  statusText.textContent = game.winner ? `${game.winner} wins` : `Minions ${game.minions.length} | E deposit at castle, shield, or powerplant`;
+  if (game.winner) {
+    statusText.textContent = `${game.winner} wins`;
+    return;
+  }
+  if (network.mode === "pvp-host") {
+    statusText.textContent = network.lastStatus || `Room ${network.roomId}`;
+    return;
+  }
+  if (network.mode === "pvp-guest") {
+    statusText.textContent = network.lastStatus || `Joined ${network.roomId}`;
+    return;
+  }
+  statusText.textContent = `Minions ${game.minions.length} | E deposit at castle, shield, or powerplant`;
 }
 
 function updateBaseControls(game) {
