@@ -54,6 +54,11 @@ const BASE_LAYOUT = {
   dormantMinionOffset: 250,
 };
 
+const AI_PROFILES = {
+  BUILDER: "builder",
+  AGGRO: "aggro",
+};
+
 const MAX_ARMS = 8;
 const LOBBY_COLORS = [
   { id: "red", label: "Red", value: "#ff5c5c" },
@@ -711,6 +716,9 @@ function spawnGame(mode = "pve") {
 }
 
 function createPlayer({ id, team, x, y, isHuman, nickname, color = COLORS.player, controlType = isHuman ? "local" : "ai" }) {
+  const aiProfile = !isHuman && controlType === "idle"
+    ? (Math.random() < 0.5 ? AI_PROFILES.BUILDER : AI_PROFILES.AGGRO)
+    : null;
   return {
     type: "player",
     id,
@@ -745,6 +753,13 @@ function createPlayer({ id, team, x, y, isHuman, nickname, color = COLORS.player
     dead: false,
     moveSpeed: isHuman ? 1600 : 1200,
     spinSpeed: isHuman ? 2.3 : 1.9,
+    aiProfile,
+    aiState: {
+      crystalCollected: false,
+      commandTimer: Math.random() * 1.8,
+      targetCrystalIndex: null,
+      lastTargetTeam: null,
+    },
   };
 }
 
@@ -1196,21 +1211,172 @@ function getHumanInput(inputState = collectNetworkInput()) {
 function updateAiPlayer(player, dt, game) {
   player.vx = 0;
   player.vy = 0;
-  return;
-
-  const enemy = game.players.find((candidate) => candidate.team !== player.team && !candidate.dead);
-  if (!enemy) {
-    player.vx = 0;
-    player.vy = 0;
+  const enemies = game.players.filter((candidate) => candidate.team !== player.team && !candidate.dead);
+  if (!enemies.length) {
     return;
   }
 
-  const dx = enemy.x - player.x;
-  const dy = enemy.y - player.y;
-  const dir = normalize(dx, dy);
-  player.rotation = Math.atan2(dir.y, dir.x);
-  player.vx = dir.x * player.moveSpeed * 0.72;
-  player.vy = dir.y * player.moveSpeed * 0.72;
+  const pad = game.pads.find((candidate) => candidate.team === player.team);
+  if (!pad) {
+    return;
+  }
+
+  player.aiState.commandTimer = Math.max(0, (player.aiState.commandTimer ?? 0) - dt);
+  if (player.arms.length > 2) {
+    player.aiState.crystalCollected = true;
+  }
+
+  if (player.aiProfile === AI_PROFILES.AGGRO) {
+    updateAggroAi(player, pad, enemies, game);
+    return;
+  }
+
+  updateBuilderAi(player, pad, enemies, game);
+}
+
+function moveAiToward(player, targetX, targetY, speedScale = 0.72) {
+  const dir = normalize(targetX - player.x, targetY - player.y);
+  player.vx = dir.x * player.moveSpeed * speedScale;
+  player.vy = dir.y * player.moveSpeed * speedScale;
+}
+
+function nearestActiveCrystal(game, player) {
+  let best = null;
+  let bestDist = Infinity;
+  for (let i = 0; i < game.crystals.length; i += 1) {
+    const crystal = game.crystals[i];
+    if (!crystal.active) {
+      continue;
+    }
+    const dist = Math.hypot(crystal.x - player.x, crystal.y - player.y);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { crystal, index: i, dist };
+    }
+  }
+  return best;
+}
+
+function nearestOrbOfKind(game, player, kind) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const orb of game.orbs) {
+    if (orb.kind !== kind) {
+      continue;
+    }
+    const dist = Math.hypot(orb.x - player.x, orb.y - player.y);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { orb, dist };
+    }
+  }
+  return best;
+}
+
+function chooseEnemyTarget(player, enemies) {
+  let best = enemies[0] ?? null;
+  let bestDist = Infinity;
+  for (const enemy of enemies) {
+    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = enemy;
+    }
+  }
+  return best;
+}
+
+function commandAiWarriors(player, enemies, game) {
+  if ((player.aiState.commandTimer ?? 0) > 0) {
+    return;
+  }
+  const target = chooseEnemyTarget(player, enemies);
+  if (!target) {
+    return;
+  }
+  player.aiState.commandTimer = 1.8;
+  player.aiState.lastTargetTeam = target.team;
+  performWarriorAttackForTeam(player.team, target.team);
+}
+
+function updateBuilderAi(player, pad, enemies, game) {
+  const teamMinions = getTeamMinionCount(game, player.team);
+
+  if (!pad.castleBuilt && player.energy >= 4 && teamMinions < 20) {
+    performSpawnWarriorForTeam(player.team);
+  }
+  if (pad.castleBuilt && player.energy >= 4 && teamMinions < 6) {
+    performSpawnWarriorForTeam(player.team);
+  }
+  if (pad.castleBuilt && teamMinions > 0) {
+    commandAiWarriors(player, enemies, game);
+  }
+
+  if (!pad.castleBuilt && player.energy > 0) {
+    moveAiToward(player, pad.x, pad.y, 0.68);
+    depositEnergy(player, game);
+    return;
+  }
+
+  if (!pad.powerBuilt && player.energy >= 10) {
+    const powerBox = getPowerBuildBox(pad);
+    moveAiToward(player, powerBox.x, powerBox.y, 0.68);
+    depositEnergy(player, game);
+    return;
+  }
+
+  if (!pad.shieldBuilt && player.energy >= 10) {
+    const shieldBox = getShieldBuildBox(pad);
+    moveAiToward(player, shieldBox.x, shieldBox.y, 0.68);
+    depositEnergy(player, game);
+    return;
+  }
+
+  if (pad.powerBuilt && player.energy >= 20 && player.energy < 30) {
+    performPowerUpgradeForTeam(player.team);
+  }
+  if (pad.shieldBuilt && player.energy >= 10 && pad.shieldHp < pad.maxShieldHp * 0.8) {
+    performShieldUpgradeForTeam(player.team);
+  }
+
+  const orbTarget = nearestOrbOfKind(game, player, "energy");
+  if (orbTarget) {
+    moveAiToward(player, orbTarget.orb.x, orbTarget.orb.y, 0.76);
+    return;
+  }
+
+  const fallbackEnemy = chooseEnemyTarget(player, enemies);
+  if (fallbackEnemy) {
+    moveAiToward(player, fallbackEnemy.x, fallbackEnemy.y, 0.54);
+  }
+}
+
+function updateAggroAi(player, pad, enemies, game) {
+  if (!player.aiState.crystalCollected) {
+    const armOrb = nearestOrbOfKind(game, player, "arm");
+    if (armOrb) {
+      moveAiToward(player, armOrb.orb.x, armOrb.orb.y, 0.8);
+      return;
+    }
+    const crystalTarget = nearestActiveCrystal(game, player);
+    if (crystalTarget) {
+      moveAiToward(player, crystalTarget.crystal.x, crystalTarget.crystal.y, 0.84);
+      return;
+    }
+  }
+
+  const target = chooseEnemyTarget(player, enemies);
+  if (!target) {
+    return;
+  }
+
+  if (pad.castleBuilt && getTeamMinionCount(game, player.team) > 0) {
+    commandAiWarriors(player, enemies, game);
+  } else if (pad.castleBuilt && player.energy >= 4) {
+    performSpawnWarriorForTeam(player.team);
+  }
+
+  moveAiToward(player, target.x, target.y, 0.9);
 }
 
 function depositEnergy(player, game) {
