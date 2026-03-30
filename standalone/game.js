@@ -752,7 +752,7 @@ function createCastlePad(team, spawnPoint) {
     shieldHp: 0,
     maxShieldHp: 100,
     powerBuilt: false,
-    energyPerTick: 1,
+    energyPerTick: 2,
     energyLevel: 0,
     reserveLevel: 0,
     minionDamage: 5,
@@ -765,12 +765,12 @@ function createCastlePad(team, spawnPoint) {
 
 function buildOrbs() {
   const orbs = [];
-  for (let i = 0; i < 28; i += 1) {
-    const column = i % 7;
-    const row = Math.floor(i / 7);
+  for (let i = 0; i < 54; i += 1) {
+    const column = i % 9;
+    const row = Math.floor(i / 9);
     orbs.push({
-      x: ARENA.x - 3780 + column * 1260 + Math.random() * 360,
-      y: ARENA.y - 2580 + row * 1560 + Math.random() * 360,
+      x: ARENA.x - 6100 + column * 1450 + Math.random() * 420,
+      y: ARENA.y - 4300 + row * 1700 + Math.random() * 420,
       radius: 26,
       energy: 1,
       kind: "energy",
@@ -781,8 +781,12 @@ function buildOrbs() {
 
 function buildCrystals() {
   return [
-    { x: WORLD.width * 0.42, y: WORLD.height * 0.36, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
-    { x: WORLD.width * 0.58, y: WORLD.height * 0.64, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x - 2800, y: ARENA.y - 2400, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x + 2800, y: ARENA.y + 2400, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x + 3100, y: ARENA.y - 2100, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x - 3100, y: ARENA.y + 2100, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x, y: ARENA.y - 3450, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x, y: ARENA.y + 3450, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
   ];
 }
 
@@ -1280,6 +1284,10 @@ function selectTargetAtPoint(point) {
 
 function issueAttackTarget(targetTeam) {
   STATE.selectedTargetTeam = targetTeam;
+  if (STATE.game) {
+    const localPlayer = getHumanPlayer();
+    updateTargetList(STATE.game, localPlayer);
+  }
   if (network.mode === "match-client") {
     sendSocket({ type: "action", action: { type: "attack_warriors", targetTeam } });
     return;
@@ -1909,7 +1917,11 @@ function updateTargetList(game, localPlayer) {
       button.classList.add("active");
     }
     button.disabled = !localPad?.castleBuilt || teamMinions <= 0;
-    button.addEventListener("click", () => issueAttackTarget(enemy.team));
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      issueAttackTarget(enemy.team);
+    });
 
     const swatch = document.createElement("span");
     swatch.className = "target-swatch";
