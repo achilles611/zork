@@ -8,11 +8,13 @@ const hostPvpButton = document.getElementById("hostPvpButton");
 const joinPvpButton = document.getElementById("joinPvpButton");
 const roomCodeInput = document.getElementById("roomCodeInput");
 const resetFightButton = document.getElementById("resetFightButton");
+const lobbySlots = document.getElementById("lobbySlots");
 const playerStats = document.getElementById("playerStats");
 const statusText = document.getElementById("statusText");
 const castleState = document.getElementById("castleState");
 const powerplantState = document.getElementById("powerplantState");
 const spawnWarriorButton = document.getElementById("spawnWarriorButton");
+const attackWarriorButton = document.getElementById("attackWarriorButton");
 const castleUpgradeButton = document.getElementById("castleUpgradeButton");
 const powerUpgradeButton = document.getElementById("powerUpgradeButton");
 const powerReserveButton = document.getElementById("powerReserveButton");
@@ -42,12 +44,36 @@ const ARENA = {
 };
 
 const MAX_ARMS = 8;
+const LOBBY_COLORS = [
+  { id: "red", label: "Red", value: "#ff5c5c" },
+  { id: "blue", label: "Blue", value: "#63b3ff" },
+  { id: "green", label: "Green", value: "#67e380" },
+  { id: "yellow", label: "Yellow", value: "#ffe66b" },
+  { id: "orange", label: "Orange", value: "#ff9f4a" },
+  { id: "purple", label: "Purple", value: "#b985ff" },
+  { id: "pink", label: "Pink", value: "#ff8ec7" },
+  { id: "teal", label: "Teal", value: "#54e1d6" },
+  { id: "white", label: "White", value: "#f2f6ff" },
+  { id: "brown", label: "Brown", value: "#b98a68" },
+];
 
 const STATE = {
   mode: "title",
   keys: new Set(),
   game: null,
   mouseWorld: { x: WORLD.width / 2, y: WORLD.height / 2 },
+  selectedTargetTeam: null,
+  lobby: [
+    { type: "player", colorId: "white" },
+    { type: "npc", colorId: "red" },
+    { type: "npc", colorId: "blue" },
+    { type: "empty", colorId: "green" },
+    { type: "empty", colorId: "yellow" },
+    { type: "empty", colorId: "orange" },
+    { type: "empty", colorId: "purple" },
+    { type: "empty", colorId: "pink" },
+  ],
+  touchMove: { active: false, pointerId: null, originX: 0, originY: 0, currentX: 0, currentY: 0 },
 };
 
 const COLORS = {
@@ -293,11 +319,13 @@ function sendSocket(payload) {
 }
 
 function collectNetworkInput() {
+  const touchDx = STATE.touchMove.currentX - STATE.touchMove.originX;
+  const touchDy = STATE.touchMove.currentY - STATE.touchMove.originY;
   return {
-    left: STATE.keys.has("KeyA"),
-    right: STATE.keys.has("KeyD"),
-    up: STATE.keys.has("KeyW"),
-    down: STATE.keys.has("KeyS"),
+    left: STATE.keys.has("KeyA") || (STATE.touchMove.active && touchDx < -14),
+    right: STATE.keys.has("KeyD") || (STATE.touchMove.active && touchDx > 14),
+    up: STATE.keys.has("KeyW") || (STATE.touchMove.active && touchDy < -14),
+    down: STATE.keys.has("KeyS") || (STATE.touchMove.active && touchDy > 14),
     dash: STATE.keys.has("ShiftLeft"),
     deposit: STATE.keys.has("KeyE"),
   };
@@ -320,6 +348,7 @@ function serializeGameState(game) {
       id: player.id,
       team: player.team,
       nickname: player.nickname,
+      color: player.color,
       x: player.x,
       y: player.y,
       rotation: player.rotation,
@@ -393,37 +422,85 @@ function segmentCollision(segA, radiusA, segB, radiusB) {
   return Math.min(...checks) <= radiusA + radiusB;
 }
 
+function buildSpawnPoints(count = 8) {
+  const points = [];
+  const radius = ARENA.radius - 1150;
+  for (let i = 0; i < count; i += 1) {
+    const angle = -Math.PI + (Math.PI * 2 * i) / count;
+    points.push({
+      x: ARENA.x + Math.cos(angle) * radius,
+      y: ARENA.y + Math.sin(angle) * radius,
+      angle,
+    });
+  }
+  return points;
+}
+
+function getColorById(colorId) {
+  return LOBBY_COLORS.find((color) => color.id === colorId) ?? LOBBY_COLORS[0];
+}
+
 function spawnGame(mode = "pve") {
-  const playerStart = { x: ARENA.x - 2580, y: ARENA.y };
-  const enemyStart = { x: ARENA.x + 2580, y: ARENA.y };
-  const player = createPlayer({
-    id: "player-1",
-    team: 1,
-    x: playerStart.x,
-    y: playerStart.y,
-    isHuman: true,
-    controlType: "local",
-    nickname: "Player 1",
-  });
-  const enemy = createPlayer({
-    id: "player-2",
-    team: 2,
-    x: enemyStart.x,
-    y: enemyStart.y,
-    isHuman: mode === "pve" ? false : true,
-    controlType: mode === "pve" ? "ai" : "remote",
-    nickname: mode === "pve" ? "AI 2" : "Player 2",
-  });
+  const spawnPoints = buildSpawnPoints(8);
+  const players = [];
+  const pads = [];
+
+  if (mode === "pve") {
+    for (let i = 0; i < spawnPoints.length; i += 1) {
+      const slot = STATE.lobby[i] ?? { type: "empty", colorId: LOBBY_COLORS[i % LOBBY_COLORS.length].id };
+      if (slot.type === "empty") {
+        continue;
+      }
+      const point = spawnPoints[i];
+      const controlType = i === 0 ? "local" : "idle";
+      const color = getColorById(slot.colorId).value;
+      players.push(createPlayer({
+        id: `player-${i + 1}`,
+        team: i + 1,
+        x: point.x,
+        y: point.y,
+        isHuman: controlType === "local",
+        controlType,
+        nickname: i === 0 ? "You" : `${slot.type === "npc" ? "NPC" : "Player"} ${i + 1}`,
+        color,
+      }));
+      pads.push(createCastlePad(i + 1, point.x + Math.cos(point.angle) * 750, point.y + Math.sin(point.angle) * 750));
+    }
+  } else {
+    const p1 = spawnPoints[0];
+    const p2 = spawnPoints[4];
+    players.push(createPlayer({
+      id: "player-1",
+      team: 1,
+      x: p1.x,
+      y: p1.y,
+      isHuman: true,
+      controlType: "local",
+      nickname: "Player 1",
+      color: getColorById(STATE.lobby[0]?.colorId ?? "white").value,
+    }));
+    players.push(createPlayer({
+      id: "player-2",
+      team: 2,
+      x: p2.x,
+      y: p2.y,
+      isHuman: true,
+      controlType: "remote",
+      nickname: "Player 2",
+      color: getColorById(STATE.lobby[1]?.colorId ?? "red").value,
+    }));
+    pads.push(createCastlePad(1, p1.x + Math.cos(p1.angle) * 750, p1.y + Math.sin(p1.angle) * 750));
+    pads.push(createCastlePad(2, p2.x + Math.cos(p2.angle) * 750, p2.y + Math.sin(p2.angle) * 750));
+  }
+
+  const cameraPlayer = players[0];
 
   return {
-    camera: { x: player.x, y: player.y, zoom: 1 },
-    players: [player, enemy],
+    camera: { x: cameraPlayer?.x ?? ARENA.x, y: cameraPlayer?.y ?? ARENA.y, zoom: 1 },
+    players,
     orbs: buildOrbs(),
     crystals: buildCrystals(),
-    pads: [
-      createCastlePad(1, playerStart.x - 750, playerStart.y),
-      createCastlePad(2, enemyStart.x + 750, enemyStart.y),
-    ],
+    pads,
     minions: [],
     particles: [],
     floatingText: [],
@@ -434,12 +511,13 @@ function spawnGame(mode = "pve") {
   };
 }
 
-function createPlayer({ id, team, x, y, isHuman, nickname, controlType = isHuman ? "local" : "ai" }) {
+function createPlayer({ id, team, x, y, isHuman, nickname, color = COLORS.player, controlType = isHuman ? "local" : "ai" }) {
   return {
     type: "player",
     id,
     team,
     nickname,
+    color,
     isHuman,
     controlType,
     x,
@@ -589,6 +667,7 @@ joinPvpButton.addEventListener("click", () => {
 });
 resetFightButton.addEventListener("click", resetToTitle);
 spawnWarriorButton.addEventListener("click", spawnWarriorFromUi);
+attackWarriorButton.addEventListener("click", commandWarriorsFromUi);
 castleUpgradeButton.addEventListener("click", upgradeCastleDamageFromUi);
 powerUpgradeButton.addEventListener("click", upgradePowerplantFromUi);
 powerReserveButton.addEventListener("click", upgradeReserveFromUi);
@@ -613,11 +692,59 @@ window.addEventListener("keyup", (event) => {
 
 window.addEventListener("pointerdown", unlockAudio);
 
+canvas.addEventListener("pointerdown", (event) => {
+  if (event.pointerType !== "touch" || STATE.mode !== "round") {
+    return;
+  }
+  STATE.touchMove = {
+    active: true,
+    pointerId: event.pointerId,
+    originX: event.clientX,
+    originY: event.clientY,
+    currentX: event.clientX,
+    currentY: event.clientY,
+  };
+});
+
 window.addEventListener("pointermove", (event) => {
   const rect = canvas.getBoundingClientRect();
   const sx = (event.clientX - rect.left) * (canvas.width / rect.width);
   const sy = (event.clientY - rect.top) * (canvas.height / rect.height);
   STATE.mouseWorld = screenToWorld(sx, sy);
+  if (STATE.touchMove.active && event.pointerId === STATE.touchMove.pointerId) {
+    STATE.touchMove.currentX = event.clientX;
+    STATE.touchMove.currentY = event.clientY;
+    if (network.mode === "pvp-guest") {
+      sendSocket({ type: "input", input: collectNetworkInput() });
+    }
+  }
+});
+
+window.addEventListener("pointerup", (event) => {
+  if (STATE.touchMove.active && event.pointerId === STATE.touchMove.pointerId) {
+    STATE.touchMove.active = false;
+    STATE.touchMove.pointerId = null;
+    if (network.mode === "pvp-guest") {
+      sendSocket({ type: "input", input: collectNetworkInput() });
+    }
+  }
+});
+
+window.addEventListener("pointercancel", (event) => {
+  if (STATE.touchMove.active && event.pointerId === STATE.touchMove.pointerId) {
+    STATE.touchMove.active = false;
+    STATE.touchMove.pointerId = null;
+  }
+});
+
+canvas.addEventListener("click", (event) => {
+  if (STATE.mode !== "round" || !STATE.game) {
+    return;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const sx = (event.clientX - rect.left) * (canvas.width / rect.width);
+  const sy = (event.clientY - rect.top) * (canvas.height / rect.height);
+  selectTargetAtPoint(screenToWorld(sx, sy));
 });
 
 window.addEventListener("resize", resizeCanvas);
@@ -627,6 +754,84 @@ function resizeCanvas() {
   canvas.height = window.innerHeight * window.devicePixelRatio;
   canvas.style.width = `${window.innerWidth}px`;
   canvas.style.height = `${window.innerHeight}px`;
+  applyResponsiveButtonLabels();
+}
+
+function renderLobbySlots() {
+  if (!lobbySlots) {
+    return;
+  }
+  lobbySlots.innerHTML = "";
+  const choices = ["empty", "npc", "player"];
+  for (let i = 0; i < 8; i += 1) {
+    const slotState = STATE.lobby[i];
+    const row = document.createElement("div");
+    row.className = "lobby-slot";
+
+    const name = document.createElement("div");
+    name.className = "lobby-slot-name";
+    name.title = `Area ${i + 1}`;
+    name.style.background = getColorById(slotState.colorId).value;
+    row.appendChild(name);
+
+    const colorSelect = document.createElement("select");
+    colorSelect.className = "lobby-color-select";
+    const usedColors = new Set(
+      STATE.lobby
+        .map((slot, slotIndex) => (slotIndex === i || slot.type === "empty" ? null : slot.colorId))
+        .filter(Boolean),
+    );
+    for (const color of LOBBY_COLORS) {
+      const option = document.createElement("option");
+      option.value = color.id;
+      option.textContent = color.label;
+      option.disabled = usedColors.has(color.id);
+      option.selected = slotState.colorId === color.id;
+      colorSelect.appendChild(option);
+    }
+    colorSelect.disabled = slotState.type === "empty";
+    colorSelect.addEventListener("change", () => {
+      STATE.lobby[i].colorId = colorSelect.value;
+      renderLobbySlots();
+    });
+    row.appendChild(colorSelect);
+
+    const controls = document.createElement("div");
+    controls.className = "lobby-slot-controls";
+
+    for (const choice of choices) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "lobby-choice";
+      button.textContent = i === 0 && choice === "player" ? "You" : choice.toUpperCase();
+      if (slotState.type === choice) {
+        button.classList.add("active");
+      }
+      if (i === 0) {
+        if (choice !== "player") {
+          button.classList.add("locked");
+        } else {
+          button.classList.add("active", "locked");
+        }
+      } else {
+        button.addEventListener("click", () => {
+          STATE.lobby[i].type = choice;
+          renderLobbySlots();
+        });
+      }
+      controls.appendChild(button);
+    }
+
+    row.appendChild(controls);
+    lobbySlots.appendChild(row);
+  }
+}
+
+function applyResponsiveButtonLabels() {
+  const mobile = window.innerWidth <= 900;
+  document.querySelectorAll(".button-label").forEach((node) => {
+    node.textContent = mobile ? node.dataset.mobile || node.textContent : node.dataset.desktop || node.textContent;
+  });
 }
 
 function getHumanPlayer() {
@@ -697,6 +902,7 @@ function update(dt) {
   for (const minion of game.minions) {
     updateMinion(minion, dt, game);
   }
+  updateMinionClashes(game);
 
   game.minions = game.minions.filter((minion) => !minion.dead);
 
@@ -897,12 +1103,29 @@ function getOwnPad(game) {
   return game.pads.find((candidate) => candidate.team === player.team) ?? null;
 }
 
+function selectTargetAtPoint(point) {
+  const player = getHumanPlayer();
+  if (!STATE.game || !player) {
+    return;
+  }
+  const target = STATE.game.players.find((candidate) => candidate.team !== player.team && !candidate.dead && distance(point, candidate) <= candidate.radius + 24);
+  STATE.selectedTargetTeam = target?.team ?? null;
+}
+
 function spawnWarriorFromUi() {
   if (network.mode === "pvp-guest") {
     sendSocket({ type: "action", action: { type: "spawn_warrior" } });
     return;
   }
   performSpawnWarriorForTeam(network.localTeam);
+}
+
+function commandWarriorsFromUi() {
+  if (network.mode === "pvp-guest") {
+    sendSocket({ type: "action", action: { type: "attack_warriors", targetTeam: STATE.selectedTargetTeam } });
+    return;
+  }
+  performWarriorAttackForTeam(network.localTeam, STATE.selectedTargetTeam);
 }
 
 function upgradeCastleDamageFromUi() {
@@ -941,14 +1164,20 @@ function handleRemoteAction(action) {
     performPowerUpgradeForTeam(2);
   } else if (action.type === "power_reserve") {
     performReserveUpgradeForTeam(2);
+  } else if (action.type === "attack_warriors") {
+    performWarriorAttackForTeam(2, action.targetTeam);
   }
+}
+
+function getTeamMinionCount(game, team) {
+  return game.minions.filter((minion) => minion.team === team && !minion.dead).length;
 }
 
 function performSpawnWarriorForTeam(team) {
   const game = STATE.game;
   const pad = game?.pads.find((candidate) => candidate.team === team);
   const player = game?.players.find((candidate) => candidate.team === team && !candidate.dead);
-  if (!game || !pad || !player || !pad.castleBuilt || player.energy < 4) {
+  if (!game || !pad || !player || !pad.castleBuilt || player.energy < 4 || getTeamMinionCount(game, team) >= 20) {
     if (team === network.localTeam) {
       flashUpgradeError(spawnWarriorButton);
     }
@@ -956,6 +1185,34 @@ function performSpawnWarriorForTeam(team) {
   }
   player.energy -= 4;
   spawnWarrior(pad, game);
+}
+
+function performWarriorAttackForTeam(team, targetTeam) {
+  const game = STATE.game;
+  const attacker = game?.players.find((candidate) => candidate.team === team && !candidate.dead);
+  const target = game?.players.find((candidate) => candidate.team === targetTeam && !candidate.dead);
+  if (!game || !attacker || !target || attacker.team === target.team) {
+    if (team === network.localTeam) {
+      flashUpgradeError(attackWarriorButton);
+    }
+    return;
+  }
+  let issued = 0;
+  for (const minion of game.minions) {
+    if (minion.team !== team || minion.dead) {
+      continue;
+    }
+    minion.targetTeam = targetTeam;
+    minion.dormant = false;
+    issued += 1;
+  }
+  if (!issued && team === network.localTeam) {
+    flashUpgradeError(attackWarriorButton);
+    return;
+  }
+  if (team === network.localTeam) {
+    STATE.selectedTargetTeam = targetTeam;
+  }
 }
 
 function performCastleUpgradeForTeam(team) {
@@ -1199,18 +1456,19 @@ function updatePad(pad, dt, game) {
 }
 
 function spawnWarrior(pad, game) {
-  const spawnOffset = pad.team === 1 ? 180 : -180;
   game.minions.push({
     type: "minion",
     team: pad.team,
-    x: pad.x + spawnOffset,
-    y: pad.y - 40 + (Math.random() - 0.5) * 120,
+    x: pad.x + (Math.random() - 0.5) * 140,
+    y: pad.y + pad.size + 72 + Math.random() * 40,
     radius: 30,
     speed: 1320,
     dead: false,
     damage: pad.minionDamage,
     spinAngle: Math.random() * Math.PI * 2,
     spinSpeed: 9,
+    dormant: true,
+    targetTeam: null,
   });
   playMinionSpawnSound();
 }
@@ -1220,13 +1478,17 @@ function updateMinion(minion, dt, game) {
     return;
   }
   minion.spinAngle += minion.spinSpeed * dt;
-  const enemy = game.players.find((player) => player.team !== minion.team && !player.dead);
-  if (!enemy) {
-    minion.dead = true;
+  if (minion.dormant || !minion.targetTeam) {
+    confineToArena(minion, minion.radius + 8);
     return;
   }
-
-  const enemyPad = game.pads.find((pad) => pad.team !== minion.team);
+  const enemy = game.players.find((player) => player.team === minion.targetTeam && !player.dead);
+  if (!enemy) {
+    minion.dormant = true;
+    minion.targetTeam = null;
+    return;
+  }
+  const enemyPad = game.pads.find((pad) => pad.team === minion.targetTeam);
   if (enemyPad && hitsShield(minion, enemyPad)) {
     enemyPad.shieldHp = Math.max(0, enemyPad.shieldHp - 5);
     spawnFloatingText(game, minion.x, minion.y - 55, "-5 shield");
@@ -1237,23 +1499,10 @@ function updateMinion(minion, dt, game) {
     }
     return;
   }
-
   const dir = normalize(enemy.x - minion.x, enemy.y - minion.y);
   minion.x += dir.x * minion.speed * dt;
   minion.y += dir.y * minion.speed * dt;
   confineToArena(minion, minion.radius + 8);
-
-  if (enemyPad && hitsShield(minion, enemyPad)) {
-    enemyPad.shieldHp = Math.max(0, enemyPad.shieldHp - 5);
-    spawnFloatingText(game, minion.x, minion.y - 55, "-5 shield");
-    minion.dead = true;
-    if (enemyPad.shieldHp <= 0) {
-      enemyPad.shieldBuilt = false;
-      spawnFloatingText(game, enemyPad.x, enemyPad.y - 240, "shield down");
-    }
-    return;
-  }
-
   if (circleCollision(minion, minion.radius, enemy, enemy.radius)) {
     enemy.bodyFlashTimer = 0.1;
     enemy.bodyHp -= minion.damage;
@@ -1270,6 +1519,27 @@ function updateMinion(minion, dt, game) {
     confineToArena(enemy, enemy.radius + 14);
     spawnFloatingText(game, minion.x, minion.y - 70, `-${minion.damage} hp`);
     minion.dead = true;
+  }
+}
+
+function updateMinionClashes(game) {
+  for (let i = 0; i < game.minions.length; i += 1) {
+    const a = game.minions[i];
+    if (a.dead) {
+      continue;
+    }
+    for (let j = i + 1; j < game.minions.length; j += 1) {
+      const b = game.minions[j];
+      if (b.dead || a.team === b.team) {
+        continue;
+      }
+      if (circleCollision(a, a.radius, b, b.radius)) {
+        a.dead = true;
+        b.dead = true;
+        spawnFloatingText(game, (a.x + b.x) * 0.5, (a.y + b.y) * 0.5 - 24, "clash");
+        break;
+      }
+    }
   }
 }
 
@@ -1413,19 +1683,23 @@ function updateBaseControls(game) {
     castleState.textContent = "Unavailable";
     powerplantState.textContent = "Unavailable";
     spawnWarriorButton.classList.add("is-unaffordable");
+    attackWarriorButton.classList.add("is-unaffordable");
     castleUpgradeButton.classList.add("is-unaffordable");
     powerUpgradeButton.classList.add("is-unaffordable");
     return;
   }
 
+  const target = game.players.find((candidate) => candidate.team === STATE.selectedTargetTeam && !candidate.dead);
+  const teamMinions = getTeamMinionCount(game, player.team);
   castleState.textContent = pad.castleBuilt
-    ? `Built | Warrior damage ${pad.minionDamage}`
+    ? `Built | Dmg ${pad.minionDamage} | Triangles ${teamMinions}/20${target ? ` | Target ${target.nickname}` : ""}`
     : `Not built | ${pad.storedEnergy}/${pad.requiredEnergy}`;
   powerplantState.textContent = pad.powerBuilt
     ? `Built | Energy +${pad.energyPerTick} | Reserve ${player.maxEnergy}`
     : `Not built | ${pad.powerStoredEnergy}/${pad.powerRequiredEnergy}`;
 
-  spawnWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4);
+  spawnWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4 || teamMinions >= 20);
+  attackWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || !target || teamMinions <= 0);
   castleUpgradeButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4);
   powerUpgradeButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
   powerReserveButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
@@ -1657,7 +1931,7 @@ function drawPlayers(game) {
     if (player.dead) {
       continue;
     }
-    const color = player.bodyFlashTimer > 0 ? COLORS.uiDanger : (player.team === 1 ? COLORS.player : COLORS.enemy);
+    const color = player.bodyFlashTimer > 0 ? COLORS.uiDanger : player.color;
     const armColor = player.armFlashTimer > 0 ? COLORS.uiDanger : color;
     const segments = getArmSegments(player);
 
@@ -1746,4 +2020,6 @@ function frame(now) {
 }
 
 resizeCanvas();
+renderLobbySlots();
+applyResponsiveButtonLabels();
 requestAnimationFrame(frame);

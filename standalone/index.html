@@ -24,11 +24,15 @@
           <p id="castleState" class="control-copy">Not built</p>
           <div class="control-actions">
             <button id="spawnWarriorButton" class="upgrade-button" type="button">
-              <span class="button-label">Spawn Warrior</span>
+              <span class="button-label" data-desktop="Spawn Warrior" data-mobile="Spawn">Spawn Warrior</span>
               <span class="button-cost"><span class="cost-value">4</span><span class="crystal-icon" aria-hidden="true"></span></span>
             </button>
+            <button id="attackWarriorButton" class="upgrade-button" type="button">
+              <span class="button-label" data-desktop="Attack" data-mobile="Attack">Attack</span>
+              <span class="button-cost"><span class="cost-value">0</span><span class="crystal-icon" aria-hidden="true"></span></span>
+            </button>
             <button id="castleUpgradeButton" class="upgrade-button" type="button">
-              <span class="button-label">Upgrade</span>
+              <span class="button-label" data-desktop="Upgrade" data-mobile="Boost">Upgrade</span>
               <span class="button-cost"><span class="cost-value">4</span><span class="crystal-icon" aria-hidden="true"></span></span>
             </button>
           </div>
@@ -38,11 +42,11 @@
           <p id="powerplantState" class="control-copy">Not built</p>
           <div class="control-actions">
             <button id="powerUpgradeButton" class="upgrade-button" type="button">
-              <span class="button-label">Energy +1</span>
+              <span class="button-label" data-desktop="Energy +1" data-mobile="Flow">Energy +1</span>
               <span class="button-cost"><span class="cost-value">20</span><span class="crystal-icon" aria-hidden="true"></span></span>
             </button>
             <button id="powerReserveButton" class="upgrade-button" type="button">
-              <span class="button-label">Energy Reserve +20</span>
+              <span class="button-label" data-desktop="Energy Reserve +20" data-mobile="Store">Energy Reserve +20</span>
               <span class="button-cost"><span class="cost-value">20</span><span class="crystal-icon" aria-hidden="true"></span></span>
             </button>
           </div>
@@ -52,17 +56,28 @@
 
     <div id="titleScreen" class="screen">
       <div class="screen-panel">
-        <img class="title-art" src="/art/title_zork.png" alt="Zork">
-        <div class="button-stack">
-          <button id="quickFightButton" class="menu-button">Quick Fight</button>
-          <button id="hostPvpButton" class="menu-button secondary">Host PvP</button>
-          <div class="pvp-join-row">
-            <input id="roomCodeInput" class="room-code-input" type="text" maxlength="4" placeholder="Room Code">
-            <button id="joinPvpButton" class="menu-button secondary join-button">Join PvP</button>
+        <div class="title-layout">
+          <div class="title-main">
+            <img class="title-art" src="/art/title_zork.png" alt="Zork">
+            <div class="button-stack">
+              <button id="quickFightButton" class="menu-button">Quick Fight</button>
+              <button id="hostPvpButton" class="menu-button secondary">Host PvP</button>
+              <div class="pvp-join-row">
+                <input id="roomCodeInput" class="room-code-input" type="text" maxlength="4" placeholder="Room Code">
+                <button id="joinPvpButton" class="menu-button secondary join-button">Join PvP</button>
+              </div>
+              <button id="resetFightButton" class="menu-button secondary">Reset Fight</button>
+            </div>
+            <p class="screen-hint">Standalone browser rebuild for fast local iteration.</p>
           </div>
-          <button id="resetFightButton" class="menu-button secondary">Reset Fight</button>
+          <div class="lobby-panel">
+            <div class="lobby-header">
+              <h3>Lobby</h3>
+              <p>8 spawn areas. Choose `Player`, `NPC`, or `Empty`.</p>
+            </div>
+            <div id="lobbySlots" class="lobby-slots"></div>
+          </div>
         </div>
-        <p class="screen-hint">Standalone browser rebuild for fast local iteration.</p>
       </div>
     </div>
   </div>
