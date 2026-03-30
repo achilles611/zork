@@ -32,14 +32,24 @@ const CASTLE_DRAW = {
 };
 
 const WORLD = {
-  width: 19200,
-  height: 13800,
+  width: 28000,
+  height: 22000,
 };
 
 const ARENA = {
   x: WORLD.width / 2,
   y: WORLD.height / 2,
-  radius: 6150,
+  radius: 9200,
+};
+
+const BASE_LAYOUT = {
+  playerRadius: ARENA.radius - 2500,
+  castleFromPlayer: 920,
+  shieldFromCastle: 1340,
+  powerFromCastle: 1340,
+  shieldArcRadius: 360,
+  shieldArcThickness: 28,
+  dormantMinionOffset: 250,
 };
 
 const MAX_ARMS = 8;
@@ -461,13 +471,23 @@ function segmentCollision(segA, radiusA, segB, radiusB) {
 
 function buildSpawnPoints(count = 8) {
   const points = [];
-  const radius = ARENA.radius - 1150;
+  const radius = BASE_LAYOUT.playerRadius;
   for (let i = 0; i < count; i += 1) {
     const angle = -Math.PI + (Math.PI * 2 * i) / count;
+    const outwardX = Math.cos(angle);
+    const outwardY = Math.sin(angle);
+    const inwardX = -outwardX;
+    const inwardY = -outwardY;
     points.push({
-      x: ARENA.x + Math.cos(angle) * radius,
-      y: ARENA.y + Math.sin(angle) * radius,
+      x: ARENA.x + outwardX * radius,
+      y: ARENA.y + outwardY * radius,
       angle,
+      outwardX,
+      outwardY,
+      inwardX,
+      inwardY,
+      tangentX: -inwardY,
+      tangentY: inwardX,
     });
   }
   return points;
@@ -488,6 +508,16 @@ function getLocalLobbySlot() {
   return STATE.lobby[network.localSlotIndex] ?? null;
 }
 
+function getClaimedLobbyPlayers() {
+  return STATE.lobby
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => slot.type === "player" && slot.clientId);
+}
+
+function isTemporaryLobbyHost() {
+  return getClaimedLobbyPlayers()[0]?.slot.clientId === network.clientId;
+}
+
 function syncHandleInputFromLobby() {
   if (!handleInput) {
     return;
@@ -502,7 +532,7 @@ function syncHandleInputFromLobby() {
 function applyLobbySync(slots, localClientId, localSlotIndex = null) {
   STATE.lobby = Array.isArray(slots)
     ? slots.map((slot, index) => ({
-        type: slot?.type === "player" ? "player" : "empty",
+        type: slot?.type === "player" ? "player" : (slot?.type === "npc" ? "npc" : "empty"),
         colorId: getColorById(slot?.colorId ?? LOBBY_COLORS[index % LOBBY_COLORS.length].id).id,
         handle: sanitizeHandle(slot?.handle),
         clientId: slot?.clientId ?? null,
@@ -540,19 +570,30 @@ function sendLobbyColor(colorId) {
   }
 }
 
+function sendLobbySlotType(slotIndex, slotType) {
+  if (!isTemporaryLobbyHost()) {
+    playErrorSound();
+    return;
+  }
+  if (network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected) {
+    sendSocket({ type: "lobby_set_slot", slotIndex, slotType });
+  }
+}
+
 function updateTitleLobbyUi() {
   const localSlot = getLocalLobbySlot();
   const activePlayers = STATE.lobby.filter((slot) => slot.type === "player").length;
+  const activeNpcs = STATE.lobby.filter((slot) => slot.type === "npc").length;
   const connected = network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected;
   let message = "Connecting to shared lobby...";
   if (!connected) {
     message = "Reconnecting to shared lobby...";
   } else if (localSlot) {
-    message = `Shared lobby live. You are in slot ${network.localSlotIndex + 1}. ${activePlayers}/8 claimed.`;
+    message = `Shared lobby live. You are in slot ${network.localSlotIndex + 1}. ${activePlayers} players, ${activeNpcs} NPCs.`;
   } else if (activePlayers >= STATE.lobby.length) {
     message = "Shared lobby is full right now.";
   } else {
-    message = `Shared lobby live. Waiting to claim a slot... ${activePlayers}/8 claimed.`;
+    message = `Shared lobby live. Waiting to claim a slot... ${activePlayers} players, ${activeNpcs} NPCs.`;
   }
   if (connected && network.matchActive) {
     message = localSlot
@@ -568,26 +609,30 @@ function updateTitleLobbyUi() {
 }
 
 function spawnGame(mode = "pve") {
-  const spawnPoints = buildSpawnPoints(8);
+  const activeSlots = STATE.lobby
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => slot.type !== "empty");
+  const spawnPoints = buildSpawnPoints(Math.max(activeSlots.length, 1));
   const players = [];
   const pads = [];
 
   if (mode === "pve" || mode === "shared-match") {
     const localSlotIndex = network.localSlotIndex != null && network.localSlotIndex >= 0 ? network.localSlotIndex : 0;
-    for (let i = 0; i < spawnPoints.length; i += 1) {
-      const slot = STATE.lobby[i] ?? { type: "empty", colorId: LOBBY_COLORS[i % LOBBY_COLORS.length].id, handle: "" };
-      if (slot.type === "empty") {
-        continue;
-      }
+    for (let i = 0; i < activeSlots.length; i += 1) {
+      const { slot, index: slotIndex } = activeSlots[i];
       const point = spawnPoints[i];
-      const controlType = mode === "pve"
-        ? (i === localSlotIndex ? "local" : "idle")
-        : (i === localSlotIndex ? "local" : "remote");
+      const controlType = slot.type === "npc"
+        ? "idle"
+        : (
+            mode === "pve"
+              ? (slotIndex === localSlotIndex ? "local" : "idle")
+              : (slotIndex === localSlotIndex ? "local" : "remote")
+          );
       const color = getColorById(slot.colorId).value;
-      const fallbackName = `Player ${i + 1}`;
+      const fallbackName = slot.type === "npc" ? `NPC ${slotIndex + 1}` : `Player ${slotIndex + 1}`;
       players.push(createPlayer({
-        id: `player-${i + 1}`,
-        team: i + 1,
+        id: `player-${slotIndex + 1}`,
+        team: slotIndex + 1,
         x: point.x,
         y: point.y,
         isHuman: controlType === "local",
@@ -595,7 +640,7 @@ function spawnGame(mode = "pve") {
         nickname: sanitizeHandle(slot.handle) || fallbackName,
         color,
       }));
-      pads.push(createCastlePad(i + 1, point.x + Math.cos(point.angle) * 750, point.y + Math.sin(point.angle) * 750));
+      pads.push(createCastlePad(slotIndex + 1, point));
     }
   } else {
     const p1 = spawnPoints[0];
@@ -620,11 +665,11 @@ function spawnGame(mode = "pve") {
       nickname: "Player 2",
       color: getColorById(STATE.lobby[1]?.colorId ?? "red").value,
     }));
-    pads.push(createCastlePad(1, p1.x + Math.cos(p1.angle) * 750, p1.y + Math.sin(p1.angle) * 750));
-    pads.push(createCastlePad(2, p2.x + Math.cos(p2.angle) * 750, p2.y + Math.sin(p2.angle) * 750));
+    pads.push(createCastlePad(1, p1));
+    pads.push(createCastlePad(2, p2));
   }
 
-  const cameraPlayer = players[0];
+  const cameraPlayer = players.find((player) => player.team === network.localTeam) ?? players[0];
 
   return {
     camera: { x: cameraPlayer?.x ?? ARENA.x, y: cameraPlayer?.y ?? ARENA.y, zoom: 1 },
@@ -680,12 +725,19 @@ function createPlayer({ id, team, x, y, isHuman, nickname, color = COLORS.player
   };
 }
 
-function createCastlePad(team, x, y) {
+function createCastlePad(team, spawnPoint) {
+  const x = spawnPoint.x + spawnPoint.inwardX * BASE_LAYOUT.castleFromPlayer;
+  const y = spawnPoint.y + spawnPoint.inwardY * BASE_LAYOUT.castleFromPlayer;
   return {
     type: "pad",
     team,
     x,
     y,
+    inwardX: spawnPoint.inwardX,
+    inwardY: spawnPoint.inwardY,
+    tangentX: spawnPoint.tangentX,
+    tangentY: spawnPoint.tangentY,
+    facingAngle: Math.atan2(spawnPoint.inwardY, spawnPoint.inwardX),
     size: 170,
     storedEnergy: 0,
     requiredEnergy: 20,
@@ -870,6 +922,7 @@ function renderLobbySlots() {
     return;
   }
   lobbySlots.innerHTML = "";
+  const temporaryHost = isTemporaryLobbyHost();
   for (let i = 0; i < 8; i += 1) {
     const slotState = STATE.lobby[i] ?? createEmptyLobbyState()[i];
     const isLocalSlot = slotState.clientId && slotState.clientId === network.clientId;
@@ -913,11 +966,25 @@ function renderLobbySlots() {
     } else if (isLocalSlot) {
       status.classList.add("active");
       status.textContent = sanitizeHandle(slotState.handle) || "You";
+    } else if (slotState.type === "npc") {
+      status.classList.add("remote");
+      status.textContent = sanitizeHandle(slotState.handle) || `NPC ${i + 1}`;
     } else {
       status.classList.add("remote");
       status.textContent = sanitizeHandle(slotState.handle) || `Player ${i + 1}`;
     }
     controls.appendChild(status);
+
+    if (!slotState.clientId && temporaryHost) {
+      const npcButton = document.createElement("button");
+      npcButton.type = "button";
+      npcButton.className = "lobby-slot-button";
+      npcButton.textContent = slotState.type === "npc" ? "Open" : "NPC";
+      npcButton.addEventListener("click", () => {
+        sendLobbySlotType(i, slotState.type === "npc" ? "empty" : "npc");
+      });
+      controls.appendChild(npcButton);
+    }
 
     row.appendChild(controls);
     lobbySlots.appendChild(row);
@@ -967,6 +1034,7 @@ function update(dt) {
   const game = STATE.game;
 
   if (network.mode === "match-client") {
+    updateCamera(game, dt);
     updateHud(game);
     updateBaseControls(game);
     return;
@@ -1167,16 +1235,16 @@ function depositEnergy(player, game) {
 
 function getShieldBuildBox(pad) {
   return {
-    x: pad.x + (pad.team === 1 ? 1040 : -1040),
-    y: pad.y,
+    x: pad.x + pad.inwardX * BASE_LAYOUT.shieldFromCastle,
+    y: pad.y + pad.inwardY * BASE_LAYOUT.shieldFromCastle,
     size: 130,
   };
 }
 
 function getPowerBuildBox(pad) {
   return {
-    x: pad.x + (pad.team === 1 ? -1040 : 1040),
-    y: pad.y,
+    x: pad.x - pad.inwardX * BASE_LAYOUT.powerFromCastle,
+    y: pad.y - pad.inwardY * BASE_LAYOUT.powerFromCastle,
     size: 120,
   };
 }
@@ -1388,12 +1456,12 @@ function applyTick(game) {
 
 function getShieldData(pad) {
   const shieldBox = getShieldBuildBox(pad);
-  const centerX = shieldBox.x + (pad.team === 1 ? 240 : -240);
-  const centerY = pad.y;
-  const radius = 310;
-  const thickness = 26;
+  const centerX = shieldBox.x + pad.inwardX * 260;
+  const centerY = shieldBox.y + pad.inwardY * 260;
+  const radius = BASE_LAYOUT.shieldArcRadius;
+  const thickness = BASE_LAYOUT.shieldArcThickness;
   const arcHalfSpan = 1.22;
-  const facingAngle = pad.team === 1 ? 0 : Math.PI;
+  const facingAngle = pad.facingAngle;
   return {
     centerX,
     centerY,
@@ -1562,8 +1630,8 @@ function spawnWarrior(pad, game) {
   game.minions.push({
     type: "minion",
     team: pad.team,
-    x: pad.x + (Math.random() - 0.5) * 140,
-    y: pad.y + pad.size + 72 + Math.random() * 40,
+    x: pad.x + pad.inwardX * BASE_LAYOUT.dormantMinionOffset + pad.tangentX * ((Math.random() - 0.5) * 180),
+    y: pad.y + pad.inwardY * BASE_LAYOUT.dormantMinionOffset + pad.tangentY * ((Math.random() - 0.5) * 180),
     radius: 30,
     speed: 1320,
     dead: false,
@@ -1891,6 +1959,8 @@ function drawPads(game) {
     ctx.strokeRect(-pad.size, -pad.size, pad.size * 2, pad.size * 2);
 
     if (pad.castleBuilt) {
+      ctx.save();
+      ctx.rotate(pad.facingAngle + Math.PI / 2);
       ctx.fillStyle = pad.team === 1 ? COLORS.castle : COLORS.castleEnemy;
       ctx.fillRect(
         -CASTLE_DRAW.bodyWidth / 2,
@@ -1916,6 +1986,7 @@ function drawPads(game) {
         CASTLE_DRAW.towerWidth,
         CASTLE_DRAW.towerHeight,
       );
+      ctx.restore();
     }
 
     ctx.fillStyle = "#f6f7fb";

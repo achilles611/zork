@@ -117,6 +117,10 @@ function getClaimedPlayers() {
     .filter(({ slot }) => slot.type === "player" && slot.clientId);
 }
 
+function getCurrentHostClientId() {
+  return getClaimedPlayers()[0]?.slot.clientId ?? null;
+}
+
 function findSocketByClientId(clientId) {
   for (const client of wss.clients) {
     if (client.readyState === client.OPEN && client.meta?.clientId === clientId) {
@@ -259,12 +263,43 @@ wss.on("connection", (socket) => {
         return;
       }
       matchState.active = true;
-      matchState.hostClientId = claimedPlayers[0].slot.clientId;
+      matchState.hostClientId = getCurrentHostClientId();
       broadcastMatch({
         type: "match_start",
         hostClientId: matchState.hostClientId,
         slots: lobbySlots,
       });
+      broadcastLobby();
+      return;
+    }
+
+    if (message.type === "lobby_set_slot") {
+      const hostClientId = getCurrentHostClientId();
+      if (!hostClientId || socket.meta.clientId !== hostClientId) {
+        send(socket, { type: "lobby_error", message: "Only the temporary host can edit empty slots." });
+        return;
+      }
+      if (matchState.active) {
+        send(socket, { type: "lobby_error", message: "You cannot change slots during a match." });
+        return;
+      }
+      const slotIndex = Number(message.slotIndex);
+      const nextType = message.slotType === "npc" ? "npc" : "empty";
+      if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= lobbySlots.length) {
+        send(socket, { type: "lobby_error", message: "Unknown lobby slot." });
+        return;
+      }
+      const slot = lobbySlots[slotIndex];
+      if (slot.clientId) {
+        send(socket, { type: "lobby_error", message: "That slot is already claimed by a player." });
+        return;
+      }
+      lobbySlots[slotIndex] = {
+        ...slot,
+        type: nextType,
+        handle: nextType === "npc" ? `NPC ${slotIndex + 1}` : "",
+        clientId: null,
+      };
       broadcastLobby();
       return;
     }

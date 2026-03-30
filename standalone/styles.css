@@ -45,6 +45,8 @@ body {
   place-items: center;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .screen.hidden,
@@ -191,6 +193,7 @@ body {
 .lobby-slot-controls {
   display: flex;
   align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -232,6 +235,22 @@ body {
 
 .lobby-status.remote {
   color: rgba(244, 246, 251, 0.92);
+}
+
+.lobby-slot-button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.lobby-slot-button:hover {
+  background: rgba(141, 225, 255, 0.14);
+  border-color: rgba(141, 225, 255, 0.3);
 }
 
 .lobby-color-select:disabled,
@@ -381,14 +400,30 @@ body {
 }
 
 @media (max-width: 900px) {
+  html,
+  body {
+    overflow-y: auto;
+  }
+
+  .app-shell {
+    min-height: 100vh;
+    height: auto;
+  }
+
   .screen-panel {
     width: min(100vw - 24px, 760px);
     padding: 18px;
     border-radius: 18px;
+    margin: 12px;
   }
 
   .title-layout {
     display: block;
+  }
+
+  .screen {
+    display: block;
+    padding: 12px 0 24px;
   }
 
   .title-art {
@@ -451,6 +486,15 @@ body {
   .lobby-color-select {
     min-width: 0;
     font-size: 11px;
+  }
+
+  .lobby-slot-controls {
+    flex-wrap: wrap;
+  }
+
+  .lobby-slot-button {
+    font-size: 10px;
+    padding: 5px 9px;
   }
 
   .hud {
