@@ -4,6 +4,7 @@ const ctx = canvas.getContext("2d");
 const titleScreen = document.getElementById("titleScreen");
 const hud = document.getElementById("hud");
 const quickFightButton = document.getElementById("quickFightButton");
+const tutorialButton = document.getElementById("tutorialButton");
 const handleInput = document.getElementById("handleInput");
 const resetFightButton = document.getElementById("resetFightButton");
 const lobbySlots = document.getElementById("lobbySlots");
@@ -23,6 +24,7 @@ const powerUpgradeButton = document.getElementById("powerUpgradeButton");
 const powerReserveButton = document.getElementById("powerReserveButton");
 const shieldUpgradeButton = document.getElementById("shieldUpgradeButton");
 const shieldHeartButton = document.getElementById("shieldHeartButton");
+const shieldRestoreButton = document.getElementById("shieldRestoreButton");
 
 const CASTLE_DRAW = {
   bodyWidth: 180,
@@ -64,6 +66,7 @@ const AI_PROFILES = {
 };
 
 const MAX_ARMS = 8;
+const WARRIOR_COST = 5;
 const LOBBY_COLORS = [
   { id: "red", label: "Red", value: "#ff5c5c" },
   { id: "blue", label: "Blue", value: "#63b3ff" },
@@ -625,18 +628,26 @@ function sendLobbyHandle() {
   }
 }
 
-function sendLobbyColor(colorId) {
+function sendLobbyColor(colorId, slotIndex = null) {
   if (!colorId) {
     return;
   }
   const localSlot = getLocalLobbySlot();
-  if (!localSlot) {
+  const targetIndex = Number.isInteger(slotIndex) ? slotIndex : network.localSlotIndex;
+  if (!Number.isInteger(targetIndex)) {
     return;
   }
-  localSlot.colorId = colorId;
+  const targetSlot = STATE.lobby[targetIndex];
+  if (!targetSlot) {
+    return;
+  }
+  if (targetIndex !== network.localSlotIndex && !(isTemporaryLobbyHost() && targetSlot.type === "npc" && !targetSlot.clientId)) {
+    return;
+  }
+  targetSlot.colorId = colorId;
   renderLobbySlots();
   if (network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected) {
-    sendSocket({ type: "lobby_color", colorId });
+    sendSocket({ type: "lobby_color", colorId, slotIndex: targetIndex });
   }
 }
 
@@ -757,6 +768,38 @@ function spawnGame(mode = "pve") {
   };
 }
 
+function spawnTutorialGame() {
+  const point = buildSpawnPoints(1)[0];
+  const player = createPlayer({
+    id: "tutorial-player",
+    team: 1,
+    x: point.x,
+    y: point.y,
+    isHuman: true,
+    controlType: "local",
+    nickname: "You",
+    color: getColorById("white").value,
+  });
+  return {
+    camera: { x: player.x, y: player.y, zoom: 1 },
+    players: [player],
+    orbs: buildOrbs(),
+    crystals: buildCrystals(),
+    pads: [createCastlePad(1, point)],
+    minions: [],
+    particles: [],
+    floatingText: [
+      { x: ARENA.x, y: ARENA.y - 360, text: "Tutorial: gather energy, build, and test abilities.", color: COLORS.healing, life: 999 },
+      { x: ARENA.x, y: ARENA.y - 310, text: "E deposit | F freeze | Click targets to send warriors.", color: COLORS.crystalCore, life: 999 },
+    ],
+    roundTime: 0,
+    tickTimer: 0,
+    winner: null,
+    npcSpawnCooldown: 0,
+    tutorial: true,
+  };
+}
+
 function createPlayer({ id, team, x, y, isHuman, nickname, color = COLORS.player, controlType = isHuman ? "local" : "ai" }) {
   const aiProfile = !isHuman && controlType === "idle"
     ? (Math.random() < 0.5 ? AI_PROFILES.BUILDER : AI_PROFILES.AGGRO)
@@ -836,6 +879,7 @@ function createCastlePad(team, spawnPoint) {
     shieldHp: 0,
     maxShieldHp: 100,
     shieldLevel: 0,
+    shieldPulseTimer: 0,
     powerBuilt: false,
     energyPerTick: 2,
     energyLevel: 0,
@@ -866,12 +910,12 @@ function buildOrbs() {
 
 function buildCrystals() {
   return [
-    { x: ARENA.x - 2800, y: ARENA.y - 2400, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
-    { x: ARENA.x + 2800, y: ARENA.y + 2400, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
-    { x: ARENA.x + 3100, y: ARENA.y - 2100, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
-    { x: ARENA.x - 3100, y: ARENA.y + 2100, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
-    { x: ARENA.x, y: ARENA.y - 3450, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
-    { x: ARENA.x, y: ARENA.y + 3450, radius: 95, hp: 60, maxHp: 60, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x - 2800, y: ARENA.y - 2400, radius: 95, hp: 2, maxHp: 2, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x + 2800, y: ARENA.y + 2400, radius: 95, hp: 2, maxHp: 2, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x + 3100, y: ARENA.y - 2100, radius: 95, hp: 2, maxHp: 2, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x - 3100, y: ARENA.y + 2100, radius: 95, hp: 2, maxHp: 2, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x, y: ARENA.y - 3450, radius: 95, hp: 2, maxHp: 2, respawnTimer: 0, active: true, hitSoundTimer: 0 },
+    { x: ARENA.x, y: ARENA.y + 3450, radius: 95, hp: 2, maxHp: 2, respawnTimer: 0, active: true, hitSoundTimer: 0 },
   ];
 }
 
@@ -891,6 +935,25 @@ function startQuickFight() {
   sendSocket({ type: "lobby_start" });
 }
 
+function startTutorial() {
+  if (network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected) {
+    sendSocket({ type: "lobby_leave" });
+  }
+  network.mode = "tutorial";
+  network.matchActive = false;
+  network.matchHostClientId = null;
+  network.localSlotIndex = null;
+  network.localTeam = 1;
+  network.remoteInputs = {};
+  STATE.game = spawnTutorialGame();
+  STATE.mode = "round";
+  basslineStep = 0;
+  const audio = getAudioContext();
+  nextBasslineTime = audio ? audio.currentTime + 0.08 : 0;
+  titleScreen.classList.add("hidden");
+  hud.classList.remove("hidden");
+}
+
 function resetToTitle() {
   if (network.mode === "match-host" || network.mode === "match-client") {
     sendSocket({ type: "match_end" });
@@ -907,12 +970,16 @@ function resetToTitle() {
   titleScreen.classList.remove("hidden");
   hud.classList.add("hidden");
   connectSocket();
+  if (network.socket && network.socket.readyState === WebSocket.OPEN && network.lobbyConnected) {
+    sendSocket({ type: "lobby_join" });
+  }
   renderLobbySlots();
   syncHandleInputFromLobby();
   updateTitleLobbyUi();
 }
 
 quickFightButton.addEventListener("click", startQuickFight);
+tutorialButton?.addEventListener("click", startTutorial);
 resetFightButton.addEventListener("click", resetToTitle);
 handleInput?.addEventListener("input", sendLobbyHandle);
 spawnWarriorButton.addEventListener("click", spawnWarriorFromUi);
@@ -921,6 +988,7 @@ powerUpgradeButton.addEventListener("click", upgradePowerplantFromUi);
 powerReserveButton.addEventListener("click", upgradeReserveFromUi);
 shieldUpgradeButton.addEventListener("click", upgradeShieldFromUi);
 shieldHeartButton.addEventListener("click", buyShieldHeartFromUi);
+shieldRestoreButton?.addEventListener("click", restoreShieldFromUi);
 
 window.addEventListener("keydown", (event) => {
   unlockAudio();
@@ -1046,9 +1114,10 @@ function renderLobbySlots() {
       option.selected = slotState.colorId === color.id;
       colorSelect.appendChild(option);
     }
-    colorSelect.disabled = !isLocalSlot;
+    const canEditNpcColor = temporaryHost && slotState.type === "npc" && !slotState.clientId;
+    colorSelect.disabled = !(isLocalSlot || canEditNpcColor);
     colorSelect.addEventListener("change", () => {
-      sendLobbyColor(colorSelect.value);
+      sendLobbyColor(colorSelect.value, i);
     });
     row.appendChild(colorSelect);
 
@@ -1299,7 +1368,7 @@ function tryFreezeBurst(player, game) {
   playFreezeBlastSound();
   spawnFloatingText(game, player.x, player.y - player.radius - 42, "freeze", COLORS.freeze);
   for (const victim of victims) {
-    victim.freezeTimer = 3;
+    victim.freezeTimer = 2;
     victim.vx = 0;
     victim.vy = 0;
     spawnFloatingText(game, victim.x, victim.y - victim.radius - 36, "frozen", COLORS.freeze);
@@ -1642,6 +1711,14 @@ function buyShieldHeartFromUi() {
   performShieldHeartForTeam(network.localTeam);
 }
 
+function restoreShieldFromUi() {
+  if (network.mode === "match-client") {
+    sendSocket({ type: "action", action: { type: "shield_restore" } });
+    return;
+  }
+  performShieldRestoreForTeam(network.localTeam);
+}
+
 function handleRemoteAction(action) {
   if (!STATE.game) {
     return;
@@ -1664,6 +1741,8 @@ function handleRemoteAction(action) {
     performShieldUpgradeForTeam(team);
   } else if (action.type === "shield_heart") {
     performShieldHeartForTeam(team);
+  } else if (action.type === "shield_restore") {
+    performShieldRestoreForTeam(team);
   }
 }
 
@@ -1675,13 +1754,13 @@ function performSpawnWarriorForTeam(team) {
   const game = STATE.game;
   const pad = game?.pads.find((candidate) => candidate.team === team);
   const player = game?.players.find((candidate) => candidate.team === team && !candidate.dead);
-  if (!game || !pad || !player || !pad.castleBuilt || player.energy < 4 || getTeamMinionCount(game, team) >= 20) {
+  if (!game || !pad || !player || !pad.castleBuilt || player.energy < WARRIOR_COST || getTeamMinionCount(game, team) >= 20) {
     if (team === network.localTeam) {
       flashUpgradeError(spawnWarriorButton);
     }
     return;
   }
-  player.energy -= 4;
+  player.energy -= WARRIOR_COST;
   spawnWarrior(pad, game);
 }
 
@@ -1806,6 +1885,42 @@ function performShieldHeartForTeam(team) {
   }
   spawnFloatingText(game, player.x, player.y - player.radius - 46, "full heal", COLORS.heart);
   playHeartHealSound();
+}
+
+function spawnShieldRestoreEffect(game, pad) {
+  for (let i = 0; i < 24; i += 1) {
+    const angle = (Math.PI * 2 * i) / 24;
+    const radius = BASE_LAYOUT.shieldRadius + (i % 2 === 0 ? 18 : -18);
+    game.particles.push({
+      x: pad.x + Math.cos(angle) * radius,
+      y: pad.y + Math.sin(angle) * radius,
+      vx: Math.cos(angle) * (220 + Math.random() * 90),
+      vy: Math.sin(angle) * (220 + Math.random() * 90),
+      life: 0.65 + Math.random() * 0.25,
+      size: 10 + Math.random() * 10,
+      color: "rgba(246, 251, 255, 0.92)",
+    });
+  }
+}
+
+function performShieldRestoreForTeam(team) {
+  const game = STATE.game;
+  const pad = game?.pads.find((candidate) => candidate.team === team);
+  const player = game?.players.find((candidate) => candidate.team === team && !candidate.dead);
+  if (!game || !pad || !player || !pad.shieldBuilt || player.energy < 40) {
+    if (team === network.localTeam) {
+      flashUpgradeError(shieldRestoreButton);
+    }
+    return;
+  }
+  player.energy -= 40;
+  pad.maxShieldHp += 10;
+  pad.shieldHp = pad.maxShieldHp;
+  pad.shieldLevel += 1;
+  pad.shieldPulseTimer = 1;
+  spawnShieldRestoreEffect(game, pad);
+  spawnFloatingText(game, pad.x, pad.y - BASE_LAYOUT.shieldRadius - 110, "shield renewed", COLORS.crystalCore);
+  playCastleBuildSound();
 }
 
 function applyTick(game) {
@@ -1982,7 +2097,7 @@ function confineToArena(entity, padding = 0) {
 }
 
 function updatePad(pad, dt, game) {
-  void dt;
+  pad.shieldPulseTimer = Math.max(0, (pad.shieldPulseTimer ?? 0) - dt);
   void game;
 }
 
@@ -2123,7 +2238,7 @@ function updateCrystals(game, dt) {
       const segments = getArmSegments(player);
       for (const segment of segments) {
         if (segmentPointDistance(segment.x1, segment.y1, segment.x2, segment.y2, crystal.x, crystal.y) <= player.armWidth + crystal.radius) {
-          crystal.hp -= 1.25;
+          crystal.hp -= 1;
           if (crystal.hitSoundTimer <= 0) {
             playCrystalHitSound();
             crystal.hitSoundTimer = 0.06;
@@ -2182,7 +2297,7 @@ function updateCamera(game, dt) {
   }
   game.camera.x = lerp(game.camera.x, player.x, Math.min(1, dt * 6));
   game.camera.y = lerp(game.camera.y, player.y, Math.min(1, dt * 6));
-  game.camera.zoom = canvas.width < 1100 ? 0.34 * window.devicePixelRatio : 0.48 * window.devicePixelRatio;
+  game.camera.zoom = canvas.width < 1100 ? 0.204 * window.devicePixelRatio : 0.288 * window.devicePixelRatio;
   const halfWidth = canvas.width / (2 * game.camera.zoom);
   const halfHeight = canvas.height / (2 * game.camera.zoom);
   game.camera.x = clamp(game.camera.x, halfWidth, WORLD.width - halfWidth);
@@ -2224,6 +2339,10 @@ function updateHud(game) {
     statusText.textContent = `${game.winner} wins`;
     return;
   }
+  if (network.mode === "tutorial" || game.tutorial) {
+    statusText.textContent = "Tutorial | Break crystals, deposit with E, cast freeze with F";
+    return;
+  }
   if (network.mode === "match-host") {
     statusText.textContent = network.lastStatus || `Hosting shared match | Players ${game.players.filter((player) => !player.dead).length}`;
     return;
@@ -2248,6 +2367,7 @@ function updateBaseControls(game) {
     powerReserveButton.classList.add("is-unaffordable");
     shieldUpgradeButton.classList.add("is-unaffordable");
     shieldHeartButton.classList.add("is-unaffordable");
+    shieldRestoreButton.classList.add("is-unaffordable");
     updateTargetList(game, null);
     return;
   }
@@ -2264,12 +2384,13 @@ function updateBaseControls(game) {
     ? `Built | HP ${Math.max(0, Math.ceil(pad.shieldHp))}/${Math.max(0, Math.ceil(pad.maxShieldHp))}`
     : `Not built | ${pad.shieldStoredEnergy}/${pad.shieldRequiredEnergy}`;
 
-  spawnWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4 || teamMinions >= 20);
+  spawnWarriorButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < WARRIOR_COST || teamMinions >= 20);
   castleUpgradeButton.classList.toggle("is-unaffordable", !pad.castleBuilt || player.energy < 4);
   powerUpgradeButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
   powerReserveButton.classList.toggle("is-unaffordable", !pad.powerBuilt || player.energy < 20);
   shieldUpgradeButton.classList.toggle("is-unaffordable", !pad.shieldBuilt || player.energy < 10);
   shieldHeartButton.classList.toggle("is-unaffordable", !pad.shieldBuilt || player.energy < 15);
+  shieldRestoreButton.classList.toggle("is-unaffordable", !pad.shieldBuilt || player.energy < 40);
   updateTargetList(game, player);
 }
 
@@ -2387,6 +2508,7 @@ function drawArena(game) {
   drawPads(game);
   drawCrystals(game);
   drawOrbs(game);
+  drawParticles(game);
   drawPlayers(game);
   drawMinions(game);
   drawFloatingText(game);
@@ -2555,6 +2677,7 @@ function drawPads(game) {
     const shieldBox = getShieldBuildBox(pad);
     const powerBox = getPowerBuildBox(pad);
     const owner = game.players.find((player) => player.team === pad.team);
+    const shieldPulse = clamp((pad.shieldPulseTimer ?? 0) / 1, 0, 1);
     ctx.save();
     ctx.translate(pad.x, pad.y);
     ctx.fillStyle = "rgba(255,255,255,0.08)";
@@ -2645,17 +2768,32 @@ function drawPads(game) {
 
     if (pad.shieldBuilt) {
       ctx.save();
-      ctx.strokeStyle = pad.team === 1 ? "rgba(130, 224, 255, 0.82)" : "rgba(255, 205, 138, 0.82)";
-      ctx.lineWidth = shield.thickness * 2;
+      ctx.strokeStyle = shieldPulse > 0
+        ? `rgba(246, 251, 255, ${0.92 + shieldPulse * 0.08})`
+        : (pad.team === 1 ? "rgba(130, 224, 255, 0.82)" : "rgba(255, 205, 138, 0.82)");
+      ctx.lineWidth = shield.thickness * 2 + shieldPulse * 24;
       ctx.beginPath();
       ctx.arc(shield.centerX, shield.centerY, shield.radius, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.strokeStyle = "rgba(255,255,255,0.28)";
-      ctx.lineWidth = 8;
+      ctx.strokeStyle = shieldPulse > 0 ? `rgba(255,255,255,${0.35 + shieldPulse * 0.45})` : "rgba(255,255,255,0.28)";
+      ctx.lineWidth = 8 + shieldPulse * 6;
       ctx.beginPath();
       ctx.arc(shield.centerX, shield.centerY, shield.radius, 0, Math.PI * 2);
       ctx.stroke();
+
+      if (shieldPulse > 0) {
+        const orbitCount = 8;
+        for (let i = 0; i < orbitCount; i += 1) {
+          const angle = game.roundTime * 7 + (Math.PI * 2 * i) / orbitCount;
+          const px = shield.centerX + Math.cos(angle) * shield.radius;
+          const py = shield.centerY + Math.sin(angle) * shield.radius;
+          ctx.fillStyle = `rgba(250, 253, 255, ${0.22 + shieldPulse * 0.62})`;
+          ctx.beginPath();
+          ctx.arc(px, py, 10 + shieldPulse * 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
       ctx.fillStyle = "#eafcff";
       ctx.font = "30px Segoe UI";
@@ -2663,6 +2801,18 @@ function drawPads(game) {
       ctx.fillText(`Shield ${Math.max(0, Math.ceil(pad.shieldHp))}`, pad.x, pad.y - shield.radius - 52);
       ctx.restore();
     }
+  }
+}
+
+function drawParticles(game) {
+  for (const particle of game.particles) {
+    ctx.save();
+    ctx.globalAlpha = clamp(particle.life, 0, 1);
+    ctx.fillStyle = particle.color ?? "rgba(255,255,255,0.7)";
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, particle.size ?? 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 

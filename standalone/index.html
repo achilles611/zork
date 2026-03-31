@@ -18,17 +18,19 @@
       <div class="hud-row">
         <div class="pill help-pill">WASD move, Shift dash, E deposit on your pad</div>
       </div>
-      <div id="energyHud" class="energy-hud">
-        <span class="crystal-icon energy-icon" aria-hidden="true"></span>
-        <span id="energyReadout" class="energy-readout">ENERGY 20/20</span>
-      </div>
-      <div id="healthHud" class="health-hud">
-        <div class="health-hud-header">
-          <span class="health-label">HP</span>
-          <span id="healthReadout" class="health-readout">100/100</span>
+      <div class="vitals-stack">
+        <div id="healthHud" class="health-hud">
+          <div class="health-hud-header">
+            <span class="health-label">HP</span>
+            <span id="healthReadout" class="health-readout">100/100</span>
+          </div>
+          <div class="health-bar-shell">
+            <div id="healthBarFill" class="health-bar-fill"></div>
+          </div>
         </div>
-        <div class="health-bar-shell">
-          <div id="healthBarFill" class="health-bar-fill"></div>
+        <div id="energyHud" class="energy-hud">
+          <span class="crystal-icon energy-icon" aria-hidden="true"></span>
+          <span id="energyReadout" class="energy-readout">ENERGY 20/20</span>
         </div>
       </div>
       <div id="targetPanel" class="target-panel">
@@ -42,11 +44,15 @@
           <div class="control-actions">
             <button id="spawnWarriorButton" class="upgrade-button" type="button">
               <span class="button-label" data-desktop="Spawn Warrior" data-mobile="Spawn">Spawn Warrior</span>
-              <span class="button-cost"><span class="cost-value">4</span><span class="crystal-icon" aria-hidden="true"></span></span>
+              <span class="button-cost"><span class="cost-value">5</span><span class="crystal-icon" aria-hidden="true"></span></span>
             </button>
             <button id="castleUpgradeButton" class="upgrade-button" type="button">
               <span class="button-label" data-desktop="Upgrade" data-mobile="Boost">Upgrade</span>
               <span class="button-cost"><span class="cost-value">4</span><span class="crystal-icon" aria-hidden="true"></span></span>
+            </button>
+            <button id="shieldRestoreButton" class="upgrade-button" type="button">
+              <span class="button-label" data-desktop="Full Shield" data-mobile="Ward">Full Shield</span>
+              <span class="button-cost"><span class="cost-value">40</span><span class="crystal-icon" aria-hidden="true"></span></span>
             </button>
           </div>
         </section>
@@ -89,6 +95,7 @@
             <div class="button-stack">
               <input id="handleInput" class="room-code-input handle-input" type="text" maxlength="18" placeholder="Handle / Nickname">
               <button id="quickFightButton" class="menu-button">Quick Fight</button>
+              <button id="tutorialButton" class="menu-button secondary">Tutorial</button>
               <button id="resetFightButton" class="menu-button secondary">Reset Fight</button>
             </div>
             <p id="titleLobbyStatus" class="screen-status">Connecting to shared lobby...</p>

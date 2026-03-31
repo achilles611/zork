@@ -59,6 +59,15 @@ function sanitizeHandle(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 18);
 }
 
+function getFirstAvailableColor(excludeIndex = -1) {
+  const taken = new Set(
+    lobbySlots
+      .map((slot, index) => (index === excludeIndex || slot.type === "empty" ? null : slot.colorId))
+      .filter(Boolean),
+  );
+  return lobbyColors.find((colorId) => !taken.has(colorId)) ?? lobbyColors[0];
+}
+
 function claimLobbySlot(socket) {
   if (Number.isInteger(socket.meta.lobbySlotIndex)) {
     return socket.meta.lobbySlotIndex;
@@ -71,7 +80,7 @@ function claimLobbySlot(socket) {
   lobbySlots[index] = {
     ...lobbySlots[index],
     type: "player",
-    colorId: lobbySlots[index].colorId ?? null,
+    colorId: lobbySlots[index].colorId ?? getFirstAvailableColor(index),
     handle: "",
     clientId: socket.meta.clientId,
   };
@@ -231,21 +240,33 @@ wss.on("connection", (socket) => {
         send(socket, { type: "lobby_error", message: "Lobby is full." });
         return;
       }
+      const targetSlotIndex = Number.isInteger(message.slotIndex) ? Number(message.slotIndex) : socket.meta.lobbySlotIndex;
+      if (!Number.isInteger(targetSlotIndex) || targetSlotIndex < 0 || targetSlotIndex >= lobbySlots.length) {
+        send(socket, { type: "lobby_error", message: "Unknown lobby slot." });
+        return;
+      }
+      const targetSlot = lobbySlots[targetSlotIndex];
+      const hostClientId = getCurrentHostClientId();
+      const canEditOtherSlot = socket.meta.clientId === hostClientId && targetSlot.type === "npc" && !targetSlot.clientId;
+      if (targetSlotIndex !== socket.meta.lobbySlotIndex && !canEditOtherSlot) {
+        send(socket, { type: "lobby_error", message: "You cannot change that color." });
+        return;
+      }
       const colorId = String(message.colorId || "").trim();
       if (!lobbyColors.includes(colorId)) {
         send(socket, { type: "lobby_error", message: "Unknown color." });
         return;
       }
       const taken = lobbySlots.some((slot, index) => (
-        index !== socket.meta.lobbySlotIndex &&
-        slot.type === "player" &&
+        index !== targetSlotIndex &&
+        slot.type !== "empty" &&
         slot.colorId === colorId
       ));
       if (taken) {
         send(socket, { type: "lobby_error", message: "Color already taken." });
         return;
       }
-      lobbySlots[socket.meta.lobbySlotIndex].colorId = colorId;
+      lobbySlots[targetSlotIndex].colorId = colorId;
       broadcastLobby();
       return;
     }
@@ -275,6 +296,13 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    if (message.type === "lobby_leave") {
+      releaseLobbySlot(socket);
+      send(socket, buildLobbyPayload(socket));
+      broadcastLobby();
+      return;
+    }
+
     if (message.type === "lobby_set_slot") {
       const hostClientId = getCurrentHostClientId();
       if (!hostClientId || socket.meta.clientId !== hostClientId) {
@@ -299,6 +327,7 @@ wss.on("connection", (socket) => {
       lobbySlots[slotIndex] = {
         ...slot,
         type: nextType,
+        colorId: nextType === "npc" ? (slot.colorId ?? getFirstAvailableColor(slotIndex)) : null,
         handle: nextType === "npc" ? `NPC ${slotIndex + 1}` : "",
         clientId: null,
       };
