@@ -205,6 +205,12 @@ body {
   color: var(--text);
   padding: 6px 8px;
   font-size: 12px;
+  color-scheme: dark;
+}
+
+.lobby-color-select option {
+  background: #151a22;
+  color: #f4f6fb;
 }
 
 .lobby-status {
@@ -297,11 +303,17 @@ body {
   pointer-events: auto;
 }
 
-.energy-hud {
+.vitals-stack {
   position: absolute;
-  top: 100px;
-  right: 244px;
-  min-width: 220px;
+  top: 12px;
+  right: 232px;
+  width: 240px;
+  display: grid;
+  gap: 0;
+}
+
+.energy-hud {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
@@ -329,10 +341,7 @@ body {
 }
 
 .health-hud {
-  position: absolute;
-  top: 12px;
-  right: 244px;
-  width: 210px;
+  width: 100%;
   padding: 10px 12px 11px;
   border-radius: 14px;
   border: 1px solid rgba(255, 122, 122, 0.22);
@@ -748,9 +757,6 @@ body {
   }
 
   .energy-hud {
-    top: 88px;
-    right: 194px;
-    min-width: 170px;
     padding: 8px 10px;
     gap: 7px;
   }
@@ -765,10 +771,14 @@ body {
   }
 
   .health-hud {
-    top: 10px;
-    right: 194px;
-    width: 176px;
     padding: 8px 10px 9px;
+  }
+
+  .vitals-stack {
+    top: 10px;
+    right: 154px;
+    width: 176px;
+    gap: 0;
   }
 
   .health-label {
@@ -788,7 +798,7 @@ body {
   }
 
   .target-panel {
-    top: 134px;
+    top: 154px;
   }
 
   .crystal-icon {
