@@ -339,6 +339,9 @@ function connectSocket() {
     } else if (message.type === "match_start") {
       network.matchActive = true;
       network.matchHostClientId = message.hostClientId ?? null;
+      if (Number.isInteger(message.localTeam)) {
+        network.localTeam = message.localTeam;
+      }
       startNetworkRound(message.hostClientId === network.clientId ? "host" : "client");
       network.lastStatus = message.hostClientId === network.clientId ? "Hosting shared match" : "Joined shared match";
     } else if (message.type === "match_end") {
@@ -419,7 +422,7 @@ function startNetworkRound(role) {
   STATE.game = spawnGame("shared-match");
   network.mode = role === "host" ? "match-host" : "match-client";
   network.remoteInputs = {};
-  network.localTeam = (network.localSlotIndex ?? 0) + 1;
+  network.localTeam = network.localTeam || ((network.localSlotIndex ?? 0) + 1);
   STATE.mode = "round";
   basslineStep = 0;
   const audio = getAudioContext();

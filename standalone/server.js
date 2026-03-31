@@ -287,11 +287,17 @@ wss.on("connection", (socket) => {
       }
       matchState.active = true;
       matchState.hostClientId = getCurrentHostClientId();
-      broadcastMatch({
-        type: "match_start",
-        hostClientId: matchState.hostClientId,
-        slots: lobbySlots,
-      });
+      for (const client of wss.clients) {
+        if (client.readyState !== client.OPEN) {
+          continue;
+        }
+        send(client, {
+          type: "match_start",
+          hostClientId: matchState.hostClientId,
+          localTeam: Number.isInteger(client.meta?.lobbySlotIndex) ? client.meta.lobbySlotIndex + 1 : null,
+          slots: lobbySlots,
+        });
+      }
       broadcastLobby();
       return;
     }
